@@ -10,27 +10,73 @@ router.get("/conversations", verifyFirebaseToken, async (req, res) => {
     const firebaseUid = req.firebaseUid;
     const supabase = getSupabase();
 
-    const { data: profiles, error: pErr } = await supabase.from("profiles").select("id,name,avatar_url").eq("firebase_uid", firebaseUid).limit(1);
+    const { data: profiles, error: pErr } = await supabase
+      .from("profiles")
+      .select("id,name,avatar_url")
+      .eq("firebase_uid", firebaseUid)
+      .limit(1);
+    
     if (pErr) return res.status(500).json({ message: pErr.message });
     const profile = (profiles && profiles[0]) || null;
     if (!profile) return res.status(400).json({ message: "Profile not found" });
 
-    // fetch conversations where user is a participant, include last message
-    const { data, error } = await supabase
-      .from("conversations as c")
-      .select(`c.id, c.title, c.is_group, c.created_at, messages:messages(content,created_at,sender_id)`)
-      .in("c.id", (await supabase.from("participants").select("conversation_id").eq("user_id", profile.id)).then(r => (r.data || []).map(x => x.conversation_id)))
-      .order("created_at", { foreignTable: "c", ascending: false });
+    // Get conversation IDs where user is a participant
+    const { data: participantData } = await supabase
+      .from("participants")
+      .select("conversation_id")
+      .eq("user_id", profile.id);
+    
+    const conversationIds = (participantData || []).map(p => p.conversation_id);
+    
+    if (conversationIds.length === 0) {
+      return res.json({ conversations: [] });
+    }
 
-    if (error) return res.status(500).json({ message: error.message });
+    // Fetch conversations with details
+    const { data: conversations, error: convErr } = await supabase
+      .from("conversations")
+      .select("id, title, is_group, created_at, last_message_at")
+      .in("id", conversationIds)
+      .order("last_message_at", { ascending: false });
+    
+    if (convErr) return res.status(500).json({ message: convErr.message });
 
-    // simplify last message
-    const convs = (data || []).map((c) => {
-      const last = (c.messages || []).length ? c.messages[c.messages.length - 1] : null;
-      return { id: c.id, title: c.title, is_group: c.is_group, lastMessage: last ? last.content : null, lastAt: last ? last.created_at : c.created_at };
+    // Fetch unread counts
+    const { data: unreadData } = await supabase
+      .from("conversation_participants_metadata")
+      .select("conversation_id, unread_count")
+      .eq("user_id", profile.id)
+      .in("conversation_id", conversationIds);
+    
+    const unreadMap = {};
+    (unreadData || []).forEach(u => {
+      unreadMap[u.conversation_id] = u.unread_count || 0;
     });
 
-    res.json({ conversations: convs });
+    // Fetch last message for each conversation
+    const enrichedConversations = await Promise.all(
+      (conversations || []).map(async (conv) => {
+        const { data: lastMessages } = await supabase
+          .from("messages")
+          .select("content, created_at, sender_id")
+          .eq("conversation_id", conv.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        
+        const lastMessage = lastMessages && lastMessages[0];
+        
+        return {
+          id: conv.id,
+          title: conv.title,
+          is_group: conv.is_group,
+          lastMessage: lastMessage ? lastMessage.content : null,
+          lastAt: lastMessage ? lastMessage.created_at : conv.created_at,
+          unread_count: unreadMap[conv.id] || 0
+        };
+      })
+    );
+
+    res.json({ conversations: enrichedConversations });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

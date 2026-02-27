@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -29,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { getProfile } from "@/lib/profile";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -42,14 +43,57 @@ const navigationItems = [
   { icon: Briefcase, label: "Jobs", href: "/dashboard/jobs" },
   { icon: Sparkles, label: "AI Matches", href: "/dashboard/matches" },
   { icon: Users, label: "Community", href: "/dashboard/community" },
+  { icon: Users, label: "Connections", href: "/dashboard/connections" },
   { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
 ];
 
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profile, setProfile] = useState<any>(() => {
+    // Initialize from localStorage cache on mount
+    const cached = localStorage.getItem("profileCache");
+    return cached ? JSON.parse(cached) : null;
+  });
+  const [loading, setLoading] = useState(!profile);
   const location = useLocation();
 
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const stored = localStorage.getItem("user");
+        if (!stored) {
+          setLoading(false);
+          return;
+        }
+        const user = JSON.parse(stored);
+        const id = user.id || user.uid || (user.user && user.user.id);
+        if (id) {
+          const p = await getProfile(id);
+          setProfile(p);
+          // Cache profile data
+          localStorage.setItem("profileCache", JSON.stringify(p));
+        }
+      } catch (e) {
+        console.warn("Failed to load profile in layout:", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Only load if not already cached
+    if (!profile) {
+      loadProfile();
+    }
+  }, []); // Only run once on mount
+
   const isActive = (href: string) => location.pathname === href;
+
+  const userInitials = profile?.name
+    ? profile.name.split(" ").map((n: string) => n[0]).join("")
+    : "ME";
+
+  const userName = profile?.name || "User";
+  const userRole = profile?.role || "Student";
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -68,13 +112,13 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-300 ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-300 lg:h-screen ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-screen overflow-hidden">
           {/* Logo */}
-          <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
+          <div className="h-16 flex-shrink-0 flex items-center justify-between px-4 border-b border-sidebar-border">
             <Link to="/dashboard" className="flex items-center gap-2">
               <img src="/CODE.png" alt="CodeCampus" className="w-8 h-8 rounded-lg object-cover" />
               <span className="text-lg font-bold text-sidebar-foreground">CodeCampus</span>
@@ -88,7 +132,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto min-h-0">
             {navigationItems.map((item) => (
               <Link
                 key={item.href}
@@ -112,17 +156,17 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           </nav>
 
           {/* User Section */}
-          <div className="p-4 border-t border-sidebar-border">
+          <div className="p-4 border-t border-sidebar-border flex-shrink-0">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors">
                   <Avatar className="w-9 h-9">
-                    <AvatarImage src="" />
-                    <AvatarFallback className="bg-primary text-primary-foreground">JD</AvatarFallback>
+                    <AvatarImage src={profile?.avatar_url} />
+                    <AvatarFallback className="bg-primary text-primary-foreground">{userInitials}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-sidebar-foreground">John Doe</div>
-                    <div className="text-xs text-muted-foreground">Student</div>
+                    <div className="text-sm font-medium text-sidebar-foreground">{userName}</div>
+                    <div className="text-xs text-muted-foreground">{userRole}</div>
                   </div>
                   <ChevronDown className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -171,8 +215,10 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
             </Button>
-            <Button variant="ghost" size="icon">
-              <Settings className="w-5 h-5" />
+            <Button variant="ghost" size="icon" asChild>
+              <Link to="/dashboard/settings">
+                <Settings className="w-5 h-5" />
+              </Link>
             </Button>
           </div>
         </header>

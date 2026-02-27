@@ -1,20 +1,20 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Briefcase, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GlassCard } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import API from "@/lib/api"; // legacy API helper
-import { getProfile, upsertProfile } from "@/lib/profile";
 import { signInWithGoogle, auth } from "@/lib/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loginRole, setLoginRole] = useState<"student" | "recruiter">("student");
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -37,24 +37,22 @@ const Login = () => {
       // Temporarily store Firebase token so API call can attach it
       localStorage.setItem("token", idToken);
 
-      // Exchange Firebase ID token for backend JWT and ensure Supabase profile server-side
+      // Sync Firebase user to backend profile (service role)
       try {
-        const resp = await API.post("/auth/firebase");
-        const backendToken = resp.data?.token;
+        const resp = await API.post("/auth/firebase", { role: loginRole });
         const userInfo = resp.data?.user;
-        if (backendToken) {
-          // Store backend JWT as the main token for API calls
-          localStorage.setItem("token", backendToken);
-        }
-        if (userInfo) {
-          localStorage.setItem("user", JSON.stringify(userInfo));
-        }
+        if (userInfo) localStorage.setItem("user", JSON.stringify(userInfo));
+        if (userInfo?.role) localStorage.setItem("role", userInfo.role);
       } catch (err) {
         console.warn("Failed to exchange Firebase token with backend", err);
       }
 
+      if (!localStorage.getItem("role")) {
+        localStorage.setItem("role", loginRole);
+      }
+
       toast({ title: "Welcome back!", description: "Login successful. Redirecting..." });
-      navigate("/dashboard/feed");
+      navigate(loginRole === "recruiter" ? "/recruiter" : "/dashboard/feed");
     } catch (error: any) {
       console.error('Login error:', error);
       const errMsg = error?.message || error?.error || error?.response?.data?.message || "Invalid email or password";
@@ -73,23 +71,26 @@ const Login = () => {
       const res = await signInWithGoogle();
       const user = res.user;
 
-      // Get Firebase ID token and exchange with backend
+      // Get Firebase ID token and sync backend profile
       const idToken = await user.getIdToken();
       localStorage.setItem("token", idToken);
       try {
-        const resp = await API.post("/auth/firebase");
-        const backendToken = resp.data?.token;
+        const resp = await API.post("/auth/firebase", { role: loginRole });
         const userInfo = resp.data?.user;
-        if (backendToken) localStorage.setItem("token", backendToken);
         if (userInfo) localStorage.setItem("user", JSON.stringify(userInfo));
+        if (userInfo?.role) localStorage.setItem("role", userInfo.role);
       } catch (err) {
         // fallback to storing basic user info
         localStorage.setItem("user", JSON.stringify({ uid: user.uid, displayName: user.displayName, email: user.email, photoURL: user.photoURL }));
         console.warn("Failed to exchange Firebase token with backend", err);
       }
 
+      if (!localStorage.getItem("role")) {
+        localStorage.setItem("role", loginRole);
+      }
+
       toast({ title: "Signed in", description: `Welcome ${user.displayName}` });
-      navigate("/dashboard/feed");
+      navigate(loginRole === "recruiter" ? "/recruiter" : "/dashboard/feed");
     } catch (error: any) {
       toast({ title: "Authentication failed", description: error.message || "Google sign-in failed", variant: "destructive" });
     } finally {
@@ -117,11 +118,38 @@ const Login = () => {
         </Link>
 
         <GlassCard className="p-8">
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <h1 className="text-2xl font-bold mb-2">Welcome Back</h1>
             <p className="text-muted-foreground">
               Sign in to your account to continue
             </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-6">
+            <button
+              type="button"
+              onClick={() => setLoginRole("student")}
+              className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                loginRole === "student"
+                  ? "border-student/50 bg-student/10 text-student"
+                  : "border-border text-muted-foreground hover:bg-secondary/40"
+              }`}
+            >
+              <GraduationCap className="w-4 h-4" />
+              Student
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoginRole("recruiter")}
+              className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                loginRole === "recruiter"
+                  ? "border-recruiter/50 bg-recruiter/10 text-recruiter"
+                  : "border-border text-muted-foreground hover:bg-secondary/40"
+              }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              Recruiter
+            </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -198,7 +226,7 @@ const Login = () => {
 
           <div className="mt-4">
             <Button variant="outline" className="w-full mb-2" onClick={handleGoogleSignIn} disabled={isLoading}>
-              Sign in with Google
+              Sign in as {loginRole === "recruiter" ? "Recruiter" : "Student"} with Google
             </Button>
           </div>
 

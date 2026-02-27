@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "set NODE_TLS_REJECT_UNAUTHORIZED=0 && nodemon server.js",
     "migrate:users": "node ./migrations/migrate-users.mjs",
-    "apply:schema": "node ./scripts/apply-schema.mjs"
+    "apply:schema": "node ./scripts/apply-schema.mjs",
+    "seed": "node ./scripts/seed-db.js"
   },
   "dependencies": {
     "firebase-admin": "^11.0.0",

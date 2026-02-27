@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { GlassCard } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import API from "@/lib/api";
-import { upsertProfile } from "@/lib/profile";
 import { auth } from "@/lib/firebase";
 import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 
@@ -51,21 +50,29 @@ const Register = () => {
         // fall through — still create profile
       }
 
-      // Upsert profile in Supabase using Firebase UID
+      // Sync profile to backend (service role) and store role
       try {
-        await upsertProfile({
-          firebase_uid: user.uid,
-          name: formData.name || null,
-          email: formData.email || null,
-          role: formData.role || null,
-          college: formData.college || null,
+        const idToken = await user.getIdToken();
+        localStorage.setItem("token", idToken);
+        const resp = await API.post("/auth/firebase", {
+          role: formData.role,
+          college: formData.college,
+          avatar_url: null,
         });
+        const userInfo = resp.data?.user;
+        if (userInfo) {
+          localStorage.setItem("user", JSON.stringify(userInfo));
+          if (userInfo.role) localStorage.setItem("role", userInfo.role);
+        } else {
+          localStorage.setItem("role", formData.role);
+        }
       } catch (err) {
-        console.warn('Failed to upsert profile after Firebase sign-up', err);
+        console.warn('Failed to sync profile after Firebase sign-up', err);
+        localStorage.setItem("role", formData.role);
       }
 
       toast({ title: 'Account created!', description: 'A verification email was sent — please check your inbox.' });
-      navigate('/login');
+      navigate(formData.role === "recruiter" ? "/recruiter" : "/dashboard/feed");
     } catch (error: any) {
       console.error('Register error:', error);
       const message = error?.message || error?.error || error?.response?.data?.message || JSON.stringify(error);

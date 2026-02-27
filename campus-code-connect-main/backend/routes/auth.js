@@ -1,7 +1,7 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import { getSupabase } from "../config/supabase.js";
-import { verifyFirebaseIdToken } from "../middleware/firebaseAuth.js";
+import { verifyFirebaseIdToken, verifyFirebaseToken } from "../middleware/firebaseAuth.js";
 
 const router = express.Router();
 
@@ -90,6 +90,9 @@ router.post("/firebase", async (req, res) => {
     const firebaseUid = decoded.uid;
     const email = decoded.email || null;
     const name = decoded.name || decoded.email || null;
+    const roleInput = req.body?.role || null;
+    const collegeInput = req.body?.college || null;
+    const avatarInput = req.body?.avatar_url || null;
 
     let supabase;
     try {
@@ -104,24 +107,140 @@ router.post("/firebase", async (req, res) => {
 
     let profile = (profiles && profiles[0]) || null;
     if (!profile) {
-      const { data: inserted, error: insertErr } = await supabase.from("profiles").insert([{ firebase_uid: firebaseUid, name, email }]).select().limit(1);
+      const { data: inserted, error: insertErr } = await supabase
+        .from("profiles")
+        .insert([
+          {
+            firebase_uid: firebaseUid,
+            name,
+            email,
+            role: roleInput || null,
+            college: collegeInput || null,
+            avatar_url: avatarInput || null,
+          },
+        ])
+        .select()
+        .limit(1);
       if (insertErr) return res.status(500).json({ message: insertErr.message });
       profile = inserted && inserted[0];
     } else {
       // update basic fields if missing
       try {
-        await supabase.from("profiles").update({ name: name || profile.name, email: email || profile.email }).eq("firebase_uid", firebaseUid);
+        const updates = {
+          name: name || profile.name,
+          email: email || profile.email,
+        };
+        if (roleInput) updates.role = roleInput;
+        if (collegeInput) updates.college = collegeInput;
+        if (avatarInput) updates.avatar_url = avatarInput;
+
+        await supabase.from("profiles").update(updates).eq("firebase_uid", firebaseUid);
       } catch (e) {
         // ignore
       }
     }
 
-    const role = profile?.role || "recruiter" || "student";
+    const role = profile?.role || roleInput || "student";
     const backendToken = jwt.sign({ id: firebaseUid, role }, process.env.JWT_SECRET || "dev-secret", { expiresIn: "7d" });
 
     return res.json({ token: backendToken, user: { id: profile?.id || null, firebase_uid: firebaseUid, role, name: profile?.name || name, email: profile?.email || email } });
   } catch (error) {
     return res.status(500).json({ message: error.message });
+  }
+});
+
+/* GET /api/auth/profile - Get current user profile */
+router.get("/profile", verifyFirebaseToken, async (req, res) => {
+  try {
+    const firebaseUid = req.firebaseUid;
+    const supabase = getSupabase();
+
+    const { data: profiles, error: profileErr } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("firebase_uid", firebaseUid)
+      .limit(1);
+    
+    if (profileErr) return res.status(500).json({ message: profileErr.message });
+    
+    const profile = (profiles && profiles[0]) || null;
+    if (!profile) return res.status(404).json({ message: "Profile not found" });
+
+    res.json({ profile });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/* PUT /api/auth/profile - Update current user profile */
+router.put("/profile", verifyFirebaseToken, async (req, res) => {
+  try {
+    const firebaseUid = req.firebaseUid;
+    const supabase = getSupabase();
+    const { name, college, avatar_url, role } = req.body || {};
+
+    console.log("UPDATE PROFILE: firebaseUid=", firebaseUid, "payload=", { name, college, avatar_url, role });
+
+    if (!firebaseUid) {
+      console.log("ERROR: No firebaseUid in request");
+      return res.status(400).json({ message: "No firebaseUid in token" });
+    }
+
+    const payload = {};
+    if (name !== undefined) payload.name = name;
+    if (college !== undefined) payload.college = college;
+    if (avatar_url !== undefined) payload.avatar_url = avatar_url;
+    if (role !== undefined) payload.role = role;
+
+    if (Object.keys(payload).length === 0) {
+      console.log("WARNING: Empty payload for profile update");
+      return res.status(400).json({ message: "No fields to update" });
+    }
+
+    console.log("Updating profile with payload:", payload);
+
+    // First, check if profile exists
+    const { data: existingProfiles, error: checkErr } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("firebase_uid", firebaseUid)
+      .limit(1);
+
+    if (checkErr) {
+      console.error("Error checking profile existence:", checkErr.message);
+      return res.status(500).json({ message: `Database check error: ${checkErr.message}` });
+    }
+
+    if (!existingProfiles || existingProfiles.length === 0) {
+      console.error("Profile not found for firebase_uid:", firebaseUid);
+      return res.status(404).json({ message: "Profile not found. Please ensure your email is verified and try again." });
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(payload)
+      .eq("firebase_uid", firebaseUid)
+      .select()
+      .limit(1);
+
+    console.log("Update response - error:", error, "data:", data);
+
+    if (error) {
+      console.error("Supabase update error:", error.message);
+      return res.status(500).json({ message: `Database error: ${error.message}` });
+    }
+
+    const profile = data && data[0];
+    if (!profile) {
+      console.error("No profile returned after update");
+      return res.status(500).json({ message: "Update succeeded but profile not returned" });
+    }
+
+    console.log("Profile updated successfully:", profile.id);
+    res.json({ profile });
+  } catch (error) {
+    console.error("Update profile exception:", error);
+    res.status(500).json({ message: error.message });
   }
 });
 

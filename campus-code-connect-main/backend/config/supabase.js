@@ -11,7 +11,13 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.warn('Supabase URL or service role key not set. Backend Supabase client will be unavailable until configured in backend/.env')
 } else {
   try {
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+    console.log('✅ Supabase client initialized successfully');
   } catch (e) {
     console.warn('Failed to create Supabase client:', e.message)
     supabaseClient = null

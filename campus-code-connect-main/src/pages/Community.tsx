@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Plus, Search, Filter, Heart, MessageSquare, Bookmark, Share2, MoreHorizontal, Clock, Code2, Image as ImageIcon, Link as LinkIcon } from "lucide-react";
+import { Plus, Search, Filter, Heart, MessageSquare, Bookmark, Share2, MoreHorizontal, Clock, Code2, Image as ImageIcon, Link as LinkIcon, X } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getProfile } from "@/lib/profile";
@@ -22,6 +22,17 @@ const Community = () => {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const navigate = useNavigate();
+  
+  // Attachment state
+  const [codeSnippet, setCodeSnippet] = useState("");
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [documentLink, setDocumentLink] = useState("");
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  
+  // File input refs
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const codeInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -78,7 +89,10 @@ const Community = () => {
   }, []);
 
   const handlePost = async () => {
-    if (!postContent.trim()) return;
+    if (!postContent.trim() && !codeSnippet.trim() && !attachedImage && !documentLink.trim()) {
+      alert("Please write something or attach a file");
+      return;
+    }
     const stored = localStorage.getItem("user");
     if (!stored) return;
     const user = JSON.parse(stored);
@@ -88,6 +102,9 @@ const Community = () => {
         user_id: profile?.id ?? null,
         author: profile?.name || user.displayName || user.name || user.email || "Anonymous",
         content: postContent,
+        code: codeSnippet || null,
+        image: attachedImage || null,
+        document_link: documentLink || null,
         college: profile?.college || null,
         created_at: new Date().toISOString(),
       };
@@ -118,10 +135,86 @@ const Community = () => {
       if (post) {
         setPosts((prev) => [post, ...prev]);
         setPostContent("");
+        setCodeSnippet("");
+        setAttachedImage(null);
+        setDocumentLink("");
         setShowComposer(false);
       }
     } catch (err) {
       console.warn(err);
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert("Please select an image file");
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            // Create canvas and compress
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            // Limit dimensions to max 800x800
+            const maxDim = 800;
+            if (width > height) {
+              if (width > maxDim) {
+                height = Math.round(height * (maxDim / width));
+                width = maxDim;
+              }
+            } else {
+              if (height > maxDim) {
+                width = Math.round(width * (maxDim / height));
+                height = maxDim;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              // Convert to base64 with reduced quality (0.75 = 75%)
+              const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
+              setAttachedImage(compressedBase64);
+            }
+          } catch (compressErr) {
+            console.error("Image compression error:", compressErr);
+            // Fallback: use original base64
+            const base64 = event.target?.result as string;
+            setAttachedImage(base64);
+          }
+        };
+        img.onerror = () => {
+          alert("Failed to process image");
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      alert("Failed to process image");
+    }
+  };
+
+  const handleCodeAdd = () => {
+    if (codeSnippet.trim()) {
+      setShowCodeInput(false);
+    }
+  };
+
+  const handleLinkAdd = () => {
+    if (documentLink.trim()) {
+      setShowLinkInput(false);
     }
   };
 
@@ -313,20 +406,121 @@ const Community = () => {
                   </Avatar>
                   <div className="flex-1 space-y-4">
                     <Textarea placeholder="Share your project, ask a question, or start a discussion..." className="min-h-[120px] resize-none" value={postContent} onChange={(e) => setPostContent(e.target.value)} />
+                    
+                    {/* Attachment Display Section */}
+                    <div className="space-y-2">
+                      {attachedImage && (
+                        <div className="relative">
+                          <img src={attachedImage} alt="attached" className="max-h-[200px] rounded-lg" />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setAttachedImage(null)}
+                            className="absolute top-1 right-1 bg-black/50 hover:bg-black/70"
+                          >
+                            <X className="w-4 h-4 text-white" />
+                          </Button>
+                        </div>
+                      )}
+                      
+                      {codeSnippet && (
+                        <div className="relative bg-secondary/50 rounded-lg p-3">
+                          <pre className="text-xs overflow-x-auto text-muted-foreground whitespace-pre-wrap break-words">
+                            <code>{codeSnippet.substring(0, 100)}{codeSnippet.length > 100 ? '...' : ''}</code>
+                          </pre>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setCodeSnippet("")}
+                            className="absolute top-1 right-1 h-6 w-6"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
+                      
+                      {documentLink && (
+                        <div className="relative bg-secondary/50 rounded-lg p-3 flex items-center gap-2">
+                          <LinkIcon className="w-4 h-4 text-muted-foreground" />
+                          <a href={documentLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline truncate">
+                            {documentLink}
+                          </a>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDocumentLink("")}
+                            className="absolute top-1 right-1 h-6 w-6"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Code Input Section */}
+                    {showCodeInput && (
+                      <div className="space-y-2 border-t pt-2">
+                        <Textarea
+                          ref={codeInputRef}
+                          placeholder="Paste your code here..."
+                          className="min-h-[100px] font-mono text-xs"
+                          value={codeSnippet}
+                          onChange={(e) => setCodeSnippet(e.target.value)}
+                        />
+                        <Button size="sm" onClick={handleCodeAdd}>
+                          Add Code
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Link Input Section */}
+                    {showLinkInput && (
+                      <div className="space-y-2 border-t pt-2">
+                        <Input
+                          type="url"
+                          placeholder="Paste document/link URL..."
+                          value={documentLink}
+                          onChange={(e) => setDocumentLink(e.target.value)}
+                        />
+                        <Button size="sm" onClick={handleLinkAdd}>
+                          Add Link
+                        </Button>
+                      </div>
+                    )}
+                    
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setShowCodeInput(!showCodeInput)}
+                          title="Add code snippet"
+                        >
                           <Code2 className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => imageInputRef.current?.click()}
+                          title="Add photo"
+                        >
                           <ImageIcon className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setShowLinkInput(!showLinkInput)}
+                          title="Add document link"
+                        >
                           <LinkIcon className="w-4 h-4" />
                         </Button>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" onClick={() => setShowComposer(false)}>
+                        <Button variant="ghost" onClick={() => {
+                          setShowComposer(false);
+                          setShowCodeInput(false);
+                          setShowLinkInput(false);
+                        }}>
                           Cancel
                         </Button>
                         <Button onClick={handlePost}>Post</Button>
@@ -335,6 +529,15 @@ const Community = () => {
                   </div>
                 </div>
               </CardContent>
+              
+              {/* Hidden file input */}
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+              />
             </Card>
           </motion.div>
         )}
@@ -389,11 +592,26 @@ const Community = () => {
                       <p className="text-muted-foreground whitespace-pre-line">{post.content}</p>
                     </div>
 
+                    {post.image && (
+                      <div className="rounded-lg overflow-hidden">
+                        <img src={post.image} alt="post" className="max-h-[300px] w-full object-cover" />
+                      </div>
+                    )}
+
                     {post.code && (
                       <div className="bg-secondary/50 rounded-lg p-4 overflow-x-auto">
                         <pre className="text-sm font-mono text-foreground">
                           <code>{post.code}</code>
                         </pre>
+                      </div>
+                    )}
+
+                    {post.document_link && (
+                      <div className="flex items-center gap-2 p-3 bg-secondary/50 rounded-lg">
+                        <LinkIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                        <a href={post.document_link} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline truncate">
+                          {post.document_link}
+                        </a>
                       </div>
                     )}
 
@@ -480,21 +698,6 @@ const Community = () => {
                           </div>
                         </div>
                       </div>
-
-                      {showShareModal[post.id] && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center">
-                          <div className="absolute inset-0 bg-black/40" onClick={() => closeShareModal(post.id)} />
-                          <div className="bg-white dark:bg-gray-900 rounded-lg p-4 w-[320px] z-10">
-                            <h4 className="font-medium mb-2">Share post</h4>
-                            <div className="flex flex-col gap-2">
-                              <Button onClick={() => shareToMessages(post)}>Send in Message</Button>
-                              <Button variant="outline" onClick={() => copyShareLink(post)}>Copy Link</Button>
-                              <Button variant="ghost" onClick={() => shareToCommunity(post)}>Share to Community</Button>
-                              <Button variant="ghost" onClick={() => closeShareModal(post.id)}>Close</Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </Card>
@@ -502,6 +705,33 @@ const Community = () => {
             ))
           )}
         </div>
+
+        {/* Share modal rendered at top level - fixed position */}
+        {Object.keys(showShareModal).map((postId) => (
+          showShareModal[postId] && (
+            <div key={postId} className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+              <div className="absolute inset-0 bg-black/40 pointer-events-auto" onClick={() => closeShareModal(postId)} />
+              <div className="bg-white dark:bg-gray-900 rounded-lg p-4 w-[320px] z-10 pointer-events-auto">
+                <h4 className="font-medium mb-3">Share post</h4>
+                <div className="flex flex-col gap-2">
+                  <Button onClick={() => {
+                    const post = posts.find(p => p.id === postId);
+                    if (post) shareToMessages(post);
+                  }}>Send in Message</Button>
+                  <Button variant="outline" onClick={() => {
+                    const post = posts.find(p => p.id === postId);
+                    if (post) copyShareLink(post);
+                  }}>Copy Link</Button>
+                  <Button variant="ghost" onClick={() => {
+                    const post = posts.find(p => p.id === postId);
+                    if (post) shareToCommunity(post);
+                  }}>Share to Community</Button>
+                  <Button variant="ghost" onClick={() => closeShareModal(postId)}>Close</Button>
+                </div>
+              </div>
+            </div>
+          )
+        ))}
       </div>
     </DashboardLayout>
   );

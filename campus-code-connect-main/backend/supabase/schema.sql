@@ -7,8 +7,10 @@ create extension if not exists "pgcrypto";
 -- Profiles table (users)
 create table if not exists profiles (
   id uuid primary key default gen_random_uuid(),
+  firebase_uid text unique,
   name text,
   email text unique,
+  username text,
   role text,
   college text,
   avatar_url text,
@@ -35,21 +37,74 @@ create table if not exists posts (
 -- Example indexes for faster lookups
 create index if not exists idx_posts_user_id on posts(user_id);
 create index if not exists idx_profiles_email on profiles(email);
+create index if not exists idx_profiles_firebase_uid on profiles(firebase_uid);
+create index if not exists idx_profiles_username on profiles(username);
 
 -- Jobs table
 create table if not exists jobs (
   id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid references profiles(id) on delete set null,
   title text not null,
+  team text,
   company text,
   location text,
   type text,
   salary text,
   posted text,
   deadline text,
+  status text default 'Open',
   match int default 0,
   skills text[],
   description text,
   created_at timestamptz default now()
+);
+
+-- Applications table (recruiter pipeline)
+create table if not exists applications (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid references jobs(id) on delete cascade,
+  candidate_id uuid references profiles(id) on delete cascade,
+  recruiter_id uuid references profiles(id) on delete cascade,
+  status text default 'New',
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint unique_application unique (job_id, candidate_id)
+);
+
+-- Recruiter saved candidates
+create table if not exists recruiter_saved_candidates (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid references profiles(id) on delete cascade,
+  candidate_id uuid references profiles(id) on delete cascade,
+  created_at timestamptz default now(),
+  constraint unique_saved_candidate unique (recruiter_id, candidate_id)
+);
+
+-- Recruiter interviews
+create table if not exists recruiter_interviews (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid references profiles(id) on delete cascade,
+  candidate_name text,
+  job_title text,
+  interviewer text,
+  interview_date date,
+  interview_time text,
+  location text,
+  status text default 'Scheduled',
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Recruiter settings
+create table if not exists recruiter_settings (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid references profiles(id) on delete cascade unique,
+  team_members jsonb default '[]'::jsonb,
+  notifications jsonb default '{"emailUpdates": true, "interviewReminders": true, "dailyDigest": false}'::jsonb,
+  default_pipeline text[] default array['New','Screen','Interview','Offer','Hired'],
+  updated_at timestamptz default now()
 );
 
 -- Comments table
@@ -106,8 +161,15 @@ create table if not exists messages (
 
 -- Indexes
 create index if not exists idx_jobs_company on jobs(company);
+create index if not exists idx_jobs_recruiter_id on jobs(recruiter_id);
 create index if not exists idx_comments_post_id on comments(post_id);
 create index if not exists idx_likes_post_id on likes(post_id);
+create index if not exists idx_applications_recruiter_id on applications(recruiter_id);
+create index if not exists idx_applications_job_id on applications(job_id);
+create index if not exists idx_applications_candidate_id on applications(candidate_id);
+create index if not exists idx_applications_status on applications(status);
+create index if not exists idx_saved_candidates_recruiter on recruiter_saved_candidates(recruiter_id);
+create index if not exists idx_interviews_recruiter on recruiter_interviews(recruiter_id);
 
 -- Enable Row Level Security (RLS) and add basic policies
 -- Note: service_role key bypasses RLS; keep that safe on backend only.
@@ -138,6 +200,53 @@ create policy "likes_delete_own" on likes for delete using (user_id = auth.uid()
 
 alter table jobs enable row level security;
 create policy "jobs_public_select" on jobs for select using (true);
+
+alter table applications enable row level security;
+create policy "applications_select_own" on applications for select using (
+  recruiter_id = auth.uid() or candidate_id = auth.uid()
+);
+create policy "applications_insert_own" on applications for insert with check (
+  recruiter_id = auth.uid()
+);
+create policy "applications_update_own" on applications for update using (
+  recruiter_id = auth.uid()
+);
+
+alter table recruiter_saved_candidates enable row level security;
+create policy "saved_candidates_select_own" on recruiter_saved_candidates for select using (
+  recruiter_id = auth.uid()
+);
+create policy "saved_candidates_insert_own" on recruiter_saved_candidates for insert with check (
+  recruiter_id = auth.uid()
+);
+create policy "saved_candidates_delete_own" on recruiter_saved_candidates for delete using (
+  recruiter_id = auth.uid()
+);
+
+alter table recruiter_interviews enable row level security;
+create policy "recruiter_interviews_select_own" on recruiter_interviews for select using (
+  recruiter_id = auth.uid()
+);
+create policy "recruiter_interviews_insert_own" on recruiter_interviews for insert with check (
+  recruiter_id = auth.uid()
+);
+create policy "recruiter_interviews_update_own" on recruiter_interviews for update using (
+  recruiter_id = auth.uid()
+);
+create policy "recruiter_interviews_delete_own" on recruiter_interviews for delete using (
+  recruiter_id = auth.uid()
+);
+
+alter table recruiter_settings enable row level security;
+create policy "recruiter_settings_select_own" on recruiter_settings for select using (
+  recruiter_id = auth.uid()
+);
+create policy "recruiter_settings_upsert_own" on recruiter_settings for insert with check (
+  recruiter_id = auth.uid()
+);
+create policy "recruiter_settings_update_own" on recruiter_settings for update using (
+  recruiter_id = auth.uid()
+);
 
 alter table notifications enable row level security;
 create policy "notifications_select_own" on notifications for select using (user_id = auth.uid());

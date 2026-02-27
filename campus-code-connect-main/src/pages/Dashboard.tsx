@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
 import { 
   TrendingUp, 
   Users, 
@@ -17,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Link } from "react-router-dom";
+import { getProfile } from "@/lib/profile";
 
 const statsCards = [
   {
@@ -113,6 +115,23 @@ const recommendedJobs = [
 ];
 
 const Dashboard = () => {
+  const [profile, setProfile] = useState<any>(null);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      const stored = localStorage.getItem("user");
+      if (!stored) return;
+      const user = JSON.parse(stored);
+      const id = user.id || user.uid || (user.user && user.user.id);
+      if (id) {
+        const p = await getProfile(id);
+        setProfile(p);
+      }
+    };
+    loadProfile();
+  }, []);
+
+  const firstName = profile?.name ? profile.name.split(" ")[0] : "User";
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -124,7 +143,7 @@ const Dashboard = () => {
         >
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl font-bold mb-1">Welcome back, John! 👋</h1>
+              <h1 className="text-3xl font-bold mb-1">Welcome back, {firstName}! 👋</h1>
               <p className="text-muted-foreground">Here's what's happening in your community today.</p>
             </div>
             <Button variant="hero" asChild>

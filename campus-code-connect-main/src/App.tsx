@@ -13,9 +13,22 @@ import Analytics from "./pages/Analytics";
 import Jobs from "./pages/Jobs";
 import Matches from "./pages/Matches";
 import Messages from "./pages/Messages";
+import Connections from "./pages/Connections";
+import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
 import Saved from "./pages/Saved";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import RecruiterRoute from "@/components/RecruiterRoute";
+import RecruiterDashboard from "./pages/recruiter/RecruiterDashboard";
+import RecruiterJobs from "./pages/recruiter/RecruiterJobs";
+import RecruiterApplicants from "./pages/recruiter/RecruiterApplicants";
+import RecruiterCandidates from "./pages/recruiter/RecruiterCandidates";
+import RecruiterMessages from "./pages/recruiter/RecruiterMessages";
+import RecruiterProfile from "./pages/recruiter/RecruiterProfile";
+import RecruiterInterviews from "./pages/recruiter/RecruiterInterviews";
+import RecruiterSettings from "./pages/recruiter/RecruiterSettings";
+import RecruiterConnections from "./pages/recruiter/RecruiterConnections";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +52,19 @@ const App = () => (
           <Route path="/dashboard/jobs" element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
           <Route path="/dashboard/matches" element={<ProtectedRoute><Matches /></ProtectedRoute>} />
           <Route path="/dashboard/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+          <Route path="/dashboard/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
+          <Route path="/dashboard/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/dashboard/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+
+          <Route path="/recruiter" element={<RecruiterRoute><RecruiterDashboard /></RecruiterRoute>} />
+          <Route path="/recruiter/profile" element={<RecruiterRoute><RecruiterProfile /></RecruiterRoute>} />
+          <Route path="/recruiter/jobs" element={<RecruiterRoute><RecruiterJobs /></RecruiterRoute>} />
+          <Route path="/recruiter/applicants" element={<RecruiterRoute><RecruiterApplicants /></RecruiterRoute>} />
+          <Route path="/recruiter/candidates" element={<RecruiterRoute><RecruiterCandidates /></RecruiterRoute>} />
+          <Route path="/recruiter/messages" element={<RecruiterRoute><RecruiterMessages /></RecruiterRoute>} />
+          <Route path="/recruiter/connections" element={<RecruiterRoute><RecruiterConnections /></RecruiterRoute>} />
+          <Route path="/recruiter/interviews" element={<RecruiterRoute><RecruiterInterviews /></RecruiterRoute>} />
+          <Route path="/recruiter/settings" element={<RecruiterRoute><RecruiterSettings /></RecruiterRoute>} />
 
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

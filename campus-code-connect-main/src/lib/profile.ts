@@ -11,50 +11,10 @@ export type Profile = {
 };
 
 /**
- * Ensure a profile row exists for the supplied user id.
- * If the row doesn't exist it will be created.
+ * Fetch a profile by ID, Firebase UID, or email.
+ * This is a read-only operation using anon client.
+ * Profile updates must go through the backend /api/auth/profile endpoint.
  */
-export async function upsertProfile(profile: Partial<Profile> & { id?: string; firebase_uid?: string }) {
-  // Prefer matching by firebase_uid (if provided), then by email, then id.
-  if (profile.firebase_uid) {
-    // try to find existing by firebase_uid
-    let existing: any = null;
-    let selErr: any = null;
-    try {
-      const res = await supabase.from('profiles').select('*').eq('firebase_uid', profile.firebase_uid).limit(1);
-      existing = (res.data as any[])?.[0] ?? null;
-      selErr = res.error;
-    } catch (e) {
-      existing = null;
-      selErr = null;
-    }
-    if (selErr) throw selErr;
-    if (existing) {
-      const { data: updatedArr, error: updErr } = await supabase.from('profiles').update({ ...profile }).eq('firebase_uid', profile.firebase_uid).select().limit(1);
-      if (updErr) throw updErr;
-      return (updatedArr as any)?.[0] as Profile | null;
-    }
-
-    // insert new profile with firebase_uid
-    const insertBody = {
-      firebase_uid: profile.firebase_uid ?? null,
-      name: profile.name ?? null,
-      email: profile.email ?? null,
-      role: profile.role ?? null,
-      college: profile.college ?? null,
-      avatar_url: profile.avatar_url ?? null,
-    };
-    const { data: inserted, error: insErr } = await supabase.from('profiles').insert([insertBody], { returning: 'representation' });
-    if (insErr) throw insErr;
-    return (inserted as any)?.[0] as Profile | null;
-  }
-
-  // Fallback: perform a normal upsert (useful for server-side flows that use UUID ids)
-  const { data, error } = await supabase.from('profiles').upsert([profile as any], { returning: 'representation' });
-  if (error) throw error;
-  return data?.[0] as Profile | null;
-}
-
 export async function getProfile(id: string) {
   if (!id) return null;
 
@@ -98,4 +58,4 @@ export async function getProfile(id: string) {
   return null;
 }
 
-export default { upsertProfile, getProfile };
+export default { getProfile };
