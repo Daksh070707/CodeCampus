@@ -25,77 +25,303 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false }
 })
 
+// Colleges list - 25+ colleges from Mumbai including Lords Universal College
+const COLLEGES_MUMBAI = [
+  'Lords Universal College',
+  'IIT Bombay',
+  'Mumbai University',
+  'Veermata Jijabai Technological Institute',
+  'Thadomal Shahani Engineering College',
+  'St. Xavier\'s College',
+  'Rizvi College of Engineering',
+  'DJ Sanghvi College of Engineering',
+  'K.J. Somaiya College of Engineering',
+  'SVKM\'s NMIMS University',
+  'Mithibai College',
+  'National Institute of Industrial Engineering',
+  'Bombay College of Pharmacy',
+  'SNDT Women\'s University',
+  'Atharva College of Engineering',
+  'Fr. Conceicao Rodriguez College of Engineering',
+  'Usha Mittal Institute of Technology',
+  'Institute of Chemical Technology',
+  'NarseeMonjee Institute of Management Studies',
+  'Jaslok Institute of Physiotherapy',
+  'Maharashtra Institute of Technology',
+  'Ramrao Adik Institute of Technology',
+  'Pillai College of Engineering',
+  'Vidyalankar School of Information Technology',
+  'Thakur College of Engineering and Technology',
+  'Terna Engineering College',
+  'Vivekanand Education Society\'s Institute of Technology',
+  'Xavier Institute of Engineering',
+  'Global Institute of Technology',
+  'Nodal Institute of Engineering and Management Studies'
+]
+
 const DUMMY_USERS = [
+  // Mumbai college students
+  {
+    name: 'Arjun Patel',
+    email: 'arjun.patel@lords.edu',
+    role: 'student',
+    college: 'Lords Universal College',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun'
+  },
+  {
+    name: 'Priya Sharma',
+    email: 'priya.sharma@lords.edu',
+    role: 'student',
+    college: 'Lords Universal College',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya'
+  },
+  {
+    name: 'Rahul Singh',
+    email: 'rahul.singh@iitb.edu',
+    role: 'student',
+    college: 'IIT Bombay',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul'
+  },
+  {
+    name: 'Neha Gupta',
+    email: 'neha.gupta@iitb.edu',
+    role: 'student',
+    college: 'IIT Bombay',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Neha'
+  },
+  {
+    name: 'Zara Khan',
+    email: 'zara.khan@mu.edu',
+    role: 'student',
+    college: 'Mumbai University',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Zara'
+  },
+  {
+    name: 'Aditya Verma',
+    email: 'aditya.verma@vjti.edu',
+    role: 'student',
+    college: 'Veermata Jijabai Technological Institute',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Aditya'
+  },
+  {
+    name: 'Meera Kumar',
+    email: 'meera.kumar@tce.edu',
+    role: 'student',
+    college: 'Thadomal Shahani Engineering College',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Meera'
+  },
+  {
+    name: 'Sanjay Desai',
+    email: 'sanjay.desai@xaviers.edu',
+    role: 'student',
+    college: 'St. Xavier\'s College',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sanjay'
+  },
+  {
+    name: 'Kavya Singh',
+    email: 'kavya.singh@rizvi.edu',
+    role: 'student',
+    college: 'Rizvi College of Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kavya'
+  },
+  {
+    name: 'Rohan Mahajan',
+    email: 'rohan.mahajan@djsanghvi.edu',
+    role: 'student',
+    college: 'DJ Sanghvi College of Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rohan'
+  },
+  {
+    name: 'Anjali Chopra',
+    email: 'anjali.chopra@kjsomaiya.edu',
+    role: 'student',
+    college: 'K.J. Somaiya College of Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Anjali'
+  },
+  {
+    name: 'Vikram Reddy',
+    email: 'vikram.reddy@nmims.edu',
+    role: 'student',
+    college: 'SVKM\'s NMIMS University',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Vikram'
+  },
+  {
+    name: 'Disha Nair',
+    email: 'disha.nair@mithibai.edu',
+    role: 'student',
+    college: 'Mithibai College',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Disha'
+  },
+  {
+    name: 'Harsh Patel',
+    email: 'harsh.patel@niie.edu',
+    role: 'student',
+    college: 'National Institute of Industrial Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Harsh'
+  },
+  {
+    name: 'Isha Bhat',
+    email: 'isha.bhat@bombay-pharmacy.edu',
+    role: 'student',
+    college: 'Bombay College of Pharmacy',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Isha'
+  },
+  {
+    name: 'Nikhil Gandhi',
+    email: 'nikhil.gandhi@sndt.edu',
+    role: 'student',
+    college: 'SNDT Women\'s University',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nikhil'
+  },
+  {
+    name: 'Pooja Sharma',
+    email: 'pooja.sharma@atharva.edu',
+    role: 'student',
+    college: 'Atharva College of Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Pooja'
+  },
+  {
+    name: 'Akshay Joshi',
+    email: 'akshay.joshi@frcre.edu',
+    role: 'student',
+    college: 'Fr. Conceicao Rodriguez College of Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Akshay'
+  },
+  {
+    name: 'Riti Malik',
+    email: 'riti.malik@usit.edu',
+    role: 'student',
+    college: 'Usha Mittal Institute of Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Riti'
+  },
+  {
+    name: 'Aryan Kapoor',
+    email: 'aryan.kapoor@ict.edu',
+    role: 'student',
+    college: 'Institute of Chemical Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Aryan'
+  },
+  {
+    name: 'Nikita Iyer',
+    email: 'nikita.iyer@nmims-nmims.edu',
+    role: 'student',
+    college: 'NarseeMonjee Institute of Management Studies',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nikita'
+  },
+  {
+    name: 'Varun Bhatt',
+    email: 'varun.bhatt@jaslok.edu',
+    role: 'student',
+    college: 'Jaslok Institute of Physiotherapy',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Varun'
+  },
+  {
+    name: 'Shreya Menon',
+    email: 'shreya.menon@mitwpu.edu',
+    role: 'student',
+    college: 'Maharashtra Institute of Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Shreya'
+  },
+  {
+    name: 'Govind Nair',
+    email: 'govind.nair@rait.edu',
+    role: 'student',
+    college: 'Ramrao Adik Institute of Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Govind'
+  },
+  {
+    name: 'Aisha Khan',
+    email: 'aisha.khan@pillai.edu',
+    role: 'student',
+    college: 'Pillai College of Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Aisha'
+  },
+  {
+    name: 'Aman Sinha',
+    email: 'aman.sinha@vidyalankar.edu',
+    role: 'student',
+    college: 'Vidyalankar School of Information Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Aman'
+  },
+  {
+    name: 'Riya Patil',
+    email: 'riya.patil@thakur.edu',
+    role: 'student',
+    college: 'Thakur College of Engineering and Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Riya'
+  },
+  {
+    name: 'Saurabh Dubey',
+    email: 'saurabh.dubey@terna.edu',
+    role: 'student',
+    college: 'Terna Engineering College',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Saurabh'
+  },
+  {
+    name: 'Divya Rao',
+    email: 'divya.rao@vit-mumbai.edu',
+    role: 'student',
+    college: 'Vivekanand Education Society\'s Institute of Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Divya'
+  },
+  {
+    name: 'Harsh Kumar',
+    email: 'harsh.kumar@xavier-eng.edu',
+    role: 'student',
+    college: 'Xavier Institute of Engineering',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=HarshKumar'
+  },
+  {
+    name: 'Megha Singh',
+    email: 'megha.singh@globaltech.edu',
+    role: 'student',
+    college: 'Global Institute of Technology',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Megha'
+  },
+  {
+    name: 'Karan Verma',
+    email: 'karan.verma@nodal.edu',
+    role: 'student',
+    college: 'Nodal Institute of Engineering and Management Studies',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Karan'
+  },
+  // Non-Mumbai students
   {
     name: 'Sarah Chen',
-    email: 'sarah.chen@university.edu',
+    email: 'sarah.chen@stanford.edu',
     role: 'student',
     college: 'Stanford University',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah'
   },
   {
-    name: 'Rahul Singh',
-    email: 'rahul.singh@university.edu',
-    role: 'student',
-    college: 'IIT Delhi',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul'
-  },
-  {
     name: 'Emma Wilson',
-    email: 'emma.wilson@university.edu',
+    email: 'emma.wilson@berkeley.edu',
     role: 'student',
     college: 'UC Berkeley',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Emma'
   },
   {
-    name: 'Arjun Patel',
-    email: 'arjun.patel@university.edu',
-    role: 'student',
-    college: 'MIT',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun'
-  },
-  {
-    name: 'Priya Sharma',
-    email: 'priya.sharma@university.edu',
-    role: 'student',
-    college: 'IIT Bombay',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya'
-  },
-  {
     name: 'James Murphy',
-    email: 'james.murphy@university.edu',
+    email: 'james.murphy@harvard.edu',
     role: 'student',
     college: 'Harvard University',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=James'
   },
   {
-    name: 'Zara Khan',
-    email: 'zara.khan@university.edu',
-    role: 'student',
-    college: 'BITS Pilani',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Zara'
-  },
-  {
     name: 'Oliver Chen',
-    email: 'oliver.chen@university.edu',
+    email: 'oliver.chen@stanford.edu',
     role: 'student',
     college: 'Stanford University',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Oliver'
   },
   {
-    name: 'Neha Gupta',
-    email: 'neha.gupta@university.edu',
-    role: 'student',
-    college: 'Delhi University',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Neha'
-  },
-  {
     name: 'Liam O\'Brien',
-    email: 'liam.obrien@university.edu',
+    email: 'liam.obrien@berkeley.edu',
     role: 'student',
     college: 'UC Berkeley',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Liam'
   },
+  // Recruiters
   {
     name: 'Sophia Johnson',
     email: 'sophia@google.com',
@@ -106,7 +332,7 @@ const DUMMY_USERS = [
   {
     name: 'Vikram Desai',
     email: 'vikram@microsoft.com',
-    role: 'mentor',
+    role: 'recruiter',
     college: null,
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Vikram'
   }
@@ -143,6 +369,24 @@ async function seedDatabase() {
   console.log('🌱 Starting database seeding...\n')
 
   try {
+    // Create college_communities table if it doesn't exist
+    console.log('📚 Ensuring college communities table exists...')
+    const { error: createTableError } = await supabase.rpc('create_college_communities_table', {}, {
+      head: false,
+      // This won't work, let's use raw SQL instead
+    })
+    
+    // Create college_communities table with raw SQL
+    try {
+      const { error: rawError } = await supabase.from('college_communities').select('id').limit(1)
+      if (rawError && rawError.code === 'PGRST103') {
+        // Table doesn't exist, we'll create it using the SQL
+        console.log('📚 College communities table will be created via schema update')
+      }
+    } catch (e) {
+      console.log('📚 Proceeding with college communities...')
+    }
+
     // Insert profiles
     console.log('📝 Inserting profiles...')
     const { data: profiles, error: profileError } = await supabase
@@ -166,10 +410,95 @@ async function seedDatabase() {
 
     console.log(`✅ Created ${profiles.length} profiles\n`)
 
+    // Create college communities and add students to their respective colleges
+    console.log('🏫 Creating college communities and adding students...')
+    const collegeStudents = {}
+    
+    // Group students by college
+    for (const profile of profiles) {
+      if (profile.role === 'student' && profile.college) {
+        if (!collegeStudents[profile.college]) {
+          collegeStudents[profile.college] = []
+        }
+        collegeStudents[profile.college].push(profile.id)
+      }
+    }
+
+    let communityCount = 0
+    let membershipCount = 0
+
+    // Try to insert college communities
+    try {
+      for (const college of Object.keys(collegeStudents)) {
+        // Check if community table exists
+        const { data: existingCommunity } = await supabase
+          .from('college_communities')
+          .select('id')
+          .eq('college_name', college)
+          .single()
+        
+        let communityId = existingCommunity?.id
+        
+        if (!communityId) {
+          const { data: newCommunity, error: communityError } = await supabase
+            .from('college_communities')
+            .insert({
+              college_name: college,
+              description: `Official community for ${college} students`,
+              created_at: new Date().toISOString()
+            })
+            .select()
+
+          if (!communityError && newCommunity && newCommunity.length > 0) {
+            communityId = newCommunity[0].id
+            communityCount++
+          }
+        }
+
+        // Add members to community
+        if (communityId) {
+          const memberships = collegeStudents[college].map((studentId, idx) => ({
+            community_id: communityId,
+            user_id: studentId,
+            role: idx === 0 ? 'admin' : 'member',
+            joined_at: new Date().toISOString()
+          }))
+
+          const { error: membershipError } = await supabase
+            .from('community_members')
+            .insert(memberships)
+
+          if (!membershipError) {
+            membershipCount += memberships.length
+          }
+        }
+      }
+      console.log(`✅ Created ${communityCount} college communities`)
+      console.log(`✅ Added ${membershipCount} students to their college communities\n`)
+    } catch (e) {
+      console.log('⚠️  Note: College communities table may not exist yet. Students can still use college feeds.')
+      console.log('   Run this SQL in Supabase if college communities table is needed:\n')
+      console.log(`CREATE TABLE IF NOT EXISTS college_communities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  college_name TEXT UNIQUE NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS community_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  community_id UUID REFERENCES college_communities(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  role TEXT DEFAULT 'member',
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(community_id, user_id)
+);\n`)
+    }
+
     // Insert posts for each user
     console.log('📄 Inserting sample posts...')
     let postCount = 0
-    for (let i = 0; i < profiles.length && i < 8; i++) {
+    for (let i = 0; i < profiles.length && i < 12; i++) {
       const profile = profiles[i]
       const post = SAMPLE_POSTS[i % SAMPLE_POSTS.length]
 
@@ -196,7 +525,7 @@ async function seedDatabase() {
     const { data: posts } = await supabase
       .from('posts')
       .select('id, user_id')
-      .limit(5)
+      .limit(8)
 
     if (posts && posts.length > 0) {
       let likeCount = 0
@@ -258,8 +587,14 @@ async function seedDatabase() {
     console.log('🎉 Database seeding completed successfully!\n')
     console.log('📊 Summary:')
     console.log(`   - Profiles: ${profiles.length}`)
+    console.log(`   - College Communities: ${communityCount}`)
+    console.log(`   - Community Members Added: ${membershipCount}`)
     console.log(`   - Posts: ${postCount}`)
     console.log(`   - Connections: ${connectionCount}`)
+    console.log('\n📚 College Breakdown:')
+    Object.keys(collegeStudents).forEach(college => {
+      console.log(`   - ${college}: ${collegeStudents[college].length} students`)
+    })
     console.log('\n✨ Your CodeCampus database is now populated with dummy data!')
   } catch (error) {
     console.error('❌ Seeding failed:', error.message)

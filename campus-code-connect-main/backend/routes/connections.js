@@ -3,6 +3,62 @@ import { getSupabase } from "../config/supabase.js";
 import { verifyFirebaseToken } from "../middleware/firebaseAuth.js";
 
 const router = express.Router();
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value) {
+  return typeof value === "string" && UUID_REGEX.test(value);
+}
+
+async function resolveCurrentProfile(supabase, firebaseUid, decoded, select = "id") {
+  console.log(`[RESOLVE] Starting profile resolution: firebaseUid=${firebaseUid}, select="${select}"`);
+  console.log(`[RESOLVE] Is UUID: ${isUuid(firebaseUid)}`);
+  console.log(`[RESOLVE] Decoded:`, { email: decoded?.email, aud: decoded?.aud });
+
+  if (firebaseUid && !isUuid(firebaseUid)) {
+    console.log(`[RESOLVE] Attempting firebase_uid lookup...`);
+    const { data, error } = await supabase.from("profiles").select(select).eq("firebase_uid", firebaseUid).limit(1);
+    if (error) {
+      console.error(`[RESOLVE] firebase_uid lookup error:`, error);
+      throw error;
+    }
+    console.log(`[RESOLVE] firebase_uid lookup result:`, data);
+    if (data && data[0]) {
+      console.log(`[RESOLVE] ✓ Found profile by firebase_uid`);
+      return data[0];
+    }
+  }
+
+  if (firebaseUid && isUuid(firebaseUid)) {
+    console.log(`[RESOLVE] Attempting UUID id lookup...`);
+    const { data, error } = await supabase.from("profiles").select(select).eq("id", firebaseUid).limit(1);
+    if (error) {
+      console.error(`[RESOLVE] UUID lookup error:`, error);
+      throw error;
+    }
+    console.log(`[RESOLVE] UUID lookup result:`, data);
+    if (data && data[0]) {
+      console.log(`[RESOLVE] ✓ Found profile by UUID id`);
+      return data[0];
+    }
+  }
+
+  if (decoded?.email) {
+    console.log(`[RESOLVE] Attempting email lookup for: ${decoded.email}...`);
+    const { data, error } = await supabase.from("profiles").select(select).eq("email", decoded.email).limit(1);
+    if (error) {
+      console.error(`[RESOLVE] Email lookup error:`, error);
+      throw error;
+    }
+    console.log(`[RESOLVE] Email lookup result:`, data);
+    if (data && data[0]) {
+      console.log(`[RESOLVE] ✓ Found profile by email`);
+      return data[0];
+    }
+  }
+
+  console.log(`[RESOLVE] ✗ No profile found for any of the lookup methods`);
+  return null;
+}
 
 // GET /api/connections/profile - Get current user's profile
 router.get("/profile", verifyFirebaseToken, async (req, res) => {
@@ -10,17 +66,15 @@ router.get("/profile", verifyFirebaseToken, async (req, res) => {
     const firebaseUid = req.firebaseUid;
     const supabase = getSupabase();
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "*");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
 
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const profile = (profiles && profiles[0]) || null;
-    
     if (!profile) return res.status(400).json({ message: "Profile not found" });
-    
+
     res.json({ profile });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -35,14 +89,12 @@ router.get("/friends", verifyFirebaseToken, async (req, res) => {
 
     console.log(`[CONNECTIONS] Fetching friends for user ${firebaseUid}`);
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const profile = (profiles && profiles[0]) || null;
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
     if (!profile) return res.status(400).json({ message: "Profile not found" });
 
     // Get all accepted connections
@@ -95,20 +147,16 @@ router.get("/search", verifyFirebaseToken, async (req, res) => {
     console.log(`[CONNECTIONS] Current user Firebase UID: ${firebaseUid}`);
 
     // Get current user
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id, role, name, email")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) {
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id, role, name, email");
+    } catch (pErr) {
       console.error(`[CONNECTIONS] Current user fetch error:`, pErr.message);
       return res.status(500).json({ message: pErr.message });
     }
-    
-    const profile = (profiles && profiles[0]) || null;
+
     if (!profile) {
-      console.error(`[CONNECTIONS] Profile not found for Firebase UID: ${firebaseUid}`);
+      console.error(`[CONNECTIONS] Profile not found for identifier: ${firebaseUid}`);
       return res.status(400).json({ message: "Profile not found" });
     }
 
@@ -116,12 +164,12 @@ router.get("/search", verifyFirebaseToken, async (req, res) => {
 
     // Search for users by name, email, or username (case-insensitive)
     // Using OR filters to search across multiple fields
-    const searchFilter = `name.ilike.%${q}%,email.ilike.%${q}%,username.ilike.%${q}%`;
+    const searchFilter = `name.ilike.%${q}%,email.ilike.%${q}%`;
     console.log(`[CONNECTIONS] Executing search with filter:`, searchFilter);
 
     const { data: foundUsers, error: searchErr } = await supabase
       .from("profiles")
-      .select("id, name, email, avatar_url, role, college, username")
+      .select("id, name, email, avatar_url, role, college")
       .neq("id", profile.id) // Exclude current user
       .or(searchFilter)
       .limit(30);
@@ -189,6 +237,104 @@ router.get("/search", verifyFirebaseToken, async (req, res) => {
   }
 });
 
+// GET /api/connections/all - Get all users for discover tab
+router.get("/all", verifyFirebaseToken, async (req, res) => {
+  try {
+    const firebaseUid = req.firebaseUid;
+    const supabase = getSupabase();
+
+    console.log(`[CONNECTIONS] ========== ALL USERS START ==========`);
+    console.log(`[CONNECTIONS] Firebase UID:`, firebaseUid);
+    console.log(`[CONNECTIONS] Is UUID:`, isUuid(firebaseUid));
+    console.log(`[CONNECTIONS] Decoded:`, req.firebaseDecoded);
+
+    // Get current user
+    let profile;
+    try {
+      console.log(`[CONNECTIONS] Attempting to resolve current profile...`);
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id");
+      console.log(`[CONNECTIONS] Profile resolved:`, profile);
+    } catch (pErr) {
+      console.error(`[CONNECTIONS] Current user fetch ERROR:`, pErr);
+      console.error(`[CONNECTIONS] Error message:`, pErr.message);
+      console.error(`[CONNECTIONS] Error stack:`, pErr.stack);
+      return res.status(500).json({ message: `Profile resolution failed: ${pErr.message}` });
+    }
+
+    if (!profile) {
+      console.error(`[CONNECTIONS] Profile not found for identifier: ${firebaseUid}`);
+      return res.status(400).json({ message: "Profile not found" });
+    }
+
+    console.log(`[CONNECTIONS] Current user ID: ${profile.id}`);
+
+    // Get all users except current user
+    console.log(`[CONNECTIONS] Fetching all users except ${profile.id}...`);
+    const { data: allUsers, error: fetchErr } = await supabase
+      .from("profiles")
+      .select("id, name, email, avatar_url, role, college")
+      .neq("id", profile.id)
+      .limit(100);
+
+    if (fetchErr) {
+      console.error(`[CONNECTIONS] Fetch all users DB ERROR:`, fetchErr);
+      return res.status(500).json({ message: `Database error: ${fetchErr.message}` });
+    }
+
+    console.log(`[CONNECTIONS] Found ${allUsers?.length || 0} total users`);
+
+    // Get connection status for each user
+    const usersWithStatus = await Promise.all((allUsers || []).map(async (user) => {
+      try {
+        const { data: connOutgoing } = await supabase
+          .from("connections")
+          .select("id, status")
+          .eq("user_id", profile.id)
+          .eq("friend_id", user.id)
+          .limit(1);
+
+        const { data: connIncoming } = await supabase
+          .from("connections")
+          .select("id, status")
+          .eq("user_id", user.id)
+          .eq("friend_id", profile.id)
+          .limit(1);
+
+        let status = "none";
+        let requestId = null;
+        if (connOutgoing && connOutgoing[0]) {
+          status = connOutgoing[0].status === "accepted" ? "friends" : "request_sent";
+          requestId = connOutgoing[0].id;
+        } else if (connIncoming && connIncoming[0]) {
+          status = connIncoming[0].status === "accepted" ? "friends" : "request_received";
+          requestId = connIncoming[0].id;
+        }
+
+        return {
+          ...user,
+          connection_status: status,
+          request_id: requestId
+        };
+      } catch (e) {
+        console.error(`[CONNECTIONS] Error processing user ${user.id}:`, e.message);
+        return {
+          ...user,
+          connection_status: "none",
+          request_id: null
+        };
+      }
+    }));
+
+    console.log(`[CONNECTIONS] Returning ${usersWithStatus.length} users with status`);
+    console.log(`[CONNECTIONS] ========== ALL USERS END ==========`);
+    res.json({ users: usersWithStatus });
+  } catch (e) {
+    console.error("[CONNECTIONS] Fetch all GENERAL error:", e);
+    console.error("[CONNECTIONS] Stack trace:", e.stack);
+    res.status(500).json({ message: `Server error: ${e.message}` });
+  }
+});
+
 // GET /api/connections/requests - Get pending friend requests
 router.get("/requests", verifyFirebaseToken, async (req, res) => {
   try {
@@ -197,14 +343,12 @@ router.get("/requests", verifyFirebaseToken, async (req, res) => {
 
     console.log(`[CONNECTIONS] Fetching requests for user ${firebaseUid}`);
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const profile = (profiles && profiles[0]) || null;
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
     if (!profile) return res.status(400).json({ message: "Profile not found" });
 
     // Get received requests (where I'm the friend_id)
@@ -275,14 +419,12 @@ router.post("/send", verifyFirebaseToken, async (req, res) => {
 
     console.log(`[CONNECTIONS] Sending friend request from ${firebaseUid} to ${friend_id}`);
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const profile = (profiles && profiles[0]) || null;
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
     if (!profile) return res.status(400).json({ message: "Profile not found" });
 
     // Use the send_friend_request function
@@ -317,14 +459,12 @@ router.post("/accept", verifyFirebaseToken, async (req, res) => {
 
     console.log(`[CONNECTIONS] Accepting friend request ${request_id}`);
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const profile = (profiles && profiles[0]) || null;
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
     if (!profile) return res.status(400).json({ message: "Profile not found" });
 
     // Use the accept_friend_request function
@@ -357,14 +497,12 @@ router.delete("/:id", verifyFirebaseToken, async (req, res) => {
 
     console.log(`[CONNECTIONS] Removing/declining connection ${connection_id}`);
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const profile = (profiles && profiles[0]) || null;
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
     if (!profile) return res.status(400).json({ message: "Profile not found" });
 
     // Use the remove_connection function
@@ -395,14 +533,12 @@ router.get("/status/:userId", verifyFirebaseToken, async (req, res) => {
     const firebaseUid = req.firebaseUid;
     const supabase = getSupabase();
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const profile = (profiles && profiles[0]) || null;
+    let profile;
+    try {
+      profile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
     if (!profile) return res.status(400).json({ message: "Profile not found" });
 
     // Check if there's a connection in either direction
@@ -446,14 +582,12 @@ router.post("/start-conversation", verifyFirebaseToken, async (req, res) => {
     const firebaseUid = req.firebaseUid;
     const supabase = getSupabase();
 
-    const { data: profiles, error: pErr } = await supabase
-      .from("profiles")
-      .select("id, name")
-      .eq("firebase_uid", firebaseUid)
-      .limit(1);
-
-    if (pErr) return res.status(500).json({ message: pErr.message });
-    const myProfile = (profiles && profiles[0]) || null;
+    let myProfile;
+    try {
+      myProfile = await resolveCurrentProfile(supabase, firebaseUid, req.firebaseDecoded, "id, name");
+    } catch (pErr) {
+      return res.status(500).json({ message: pErr.message });
+    }
     if (!myProfile) return res.status(400).json({ message: "Profile not found" });
 
     // Get friend's profile

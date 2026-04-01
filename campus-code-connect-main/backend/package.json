@@ -8,16 +8,20 @@
     "dev": "set NODE_TLS_REJECT_UNAUTHORIZED=0 && nodemon server.js",
     "migrate:users": "node ./migrations/migrate-users.mjs",
     "apply:schema": "node ./scripts/apply-schema.mjs",
-    "seed": "node ./scripts/seed-db.js"
+    "seed": "node ./scripts/seed-db.js",
+    "remove-dummy-users": "node ./scripts/remove-dummy-users.mjs",
+    "fix:posts-columns": "node ./scripts/fix-posts-columns.mjs",
+    "fix:posts-source": "node ./scripts/fix-posts-source.mjs"
   },
   "dependencies": {
-    "firebase-admin": "^11.0.0",
     "@supabase/supabase-js": "^2.93.3",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
+    "firebase-admin": "^11.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^4.14.0",
+    "nodemailer": "^8.0.4",
     "pg": "^8.11.0"
   },
   "devDependencies": {

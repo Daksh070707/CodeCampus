@@ -6,9 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import API from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { COLLEGES } from "@/lib/colleges";
 
 const Profile = () => {
   const { toast } = useToast();
@@ -63,7 +71,6 @@ const Profile = () => {
     try {
       const payload = {
         name: name || null,
-        role: role || null,
         college: college || null,
         avatar_url: avatarUrl || null,
       };
@@ -74,6 +81,18 @@ const Profile = () => {
       
       const saved = res.data?.profile;
       if (saved?.id) setProfileId(saved.id);
+      
+      // Auto-join college community if college is selected
+      if (college && college.trim()) {
+        try {
+          await API.post("/auth/join-college-community", { college });
+          console.log("Successfully joined college community:", college);
+        } catch (communityError) {
+          console.warn("Failed to join college community:", communityError);
+          // Don't fail the entire save if community join fails
+        }
+      }
+      
       toast({ title: "Profile updated", description: "Your changes have been saved." });
     } catch (error: any) {
       console.error("Profile save error:", error);
@@ -244,7 +263,7 @@ const Profile = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Role</label>
-                  <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="student" />
+                  <Input value={role} readOnly disabled className="bg-secondary/40" />
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
@@ -253,8 +272,19 @@ const Profile = () => {
                   <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">College</label>
-                  <Input value={college} onChange={(e) => setCollege(e.target.value)} placeholder="University" />
+                  <label className="text-sm font-medium">College / University</label>
+                  <Select value={college} onValueChange={setCollege}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your college..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      {COLLEGES.map((collegeName) => (
+                        <SelectItem key={collegeName} value={collegeName}>
+                          {collegeName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

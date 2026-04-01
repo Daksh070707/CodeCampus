@@ -14,6 +14,8 @@ import postsRoutes from "./routes/posts.js";
 import messagesRoutes from "./routes/messages.js";
 import connectionsRoutes from "./routes/connections.js";
 import recruiterRoutes from "./routes/recruiter.js";
+import jobsRoutes from "./routes/jobs.js";
+import feedbackRoutes from "./routes/feedback.js";
 
 // Firebase Admin is initialized lazily within routes that need it
 const app = express();
@@ -38,6 +40,8 @@ app.use("/api/posts", postsRoutes);
 app.use("/api/messages", messagesRoutes);
 app.use("/api/connections", connectionsRoutes);
 app.use("/api/recruiter", recruiterRoutes);
+app.use("/api/jobs", jobsRoutes);
+app.use("/api/feedback", feedbackRoutes);
 
 app.get("/", (req, res) => {
   res.send("CodeCampus API running");

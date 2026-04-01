@@ -14,6 +14,167 @@ const defaultSettings = {
   defaultPipeline: ["New", "Screen", "Interview", "Offer", "Hired"],
 };
 
+async function findOrCreateDirectConversation(supabase, userAId, userBId, conversationTitle) {
+  const { data: existingParticipants, error: participantsErr } = await supabase
+    .from("participants")
+    .select("conversation_id")
+    .in("user_id", [userAId, userBId]);
+
+  if (participantsErr) throw new Error(participantsErr.message);
+
+  const convIds = (existingParticipants || []).map((row) => row.conversation_id);
+  if (convIds.length > 0) {
+    const counts = {};
+    convIds.forEach((id) => {
+      counts[id] = (counts[id] || 0) + 1;
+    });
+
+    const existingConvId = Object.keys(counts).find((id) => counts[id] === 2);
+    if (existingConvId) {
+      return existingConvId;
+    }
+  }
+
+  const { data: convRows, error: convErr } = await supabase
+    .from("conversations")
+    .insert([{ title: conversationTitle, is_group: false }])
+    .select("id")
+    .limit(1);
+
+  if (convErr) throw new Error(convErr.message);
+  const conversationId = convRows && convRows[0] && convRows[0].id;
+  if (!conversationId) throw new Error("Failed to create conversation");
+
+  const { error: addParticipantsErr } = await supabase.from("participants").insert([
+    { conversation_id: conversationId, user_id: userAId },
+    { conversation_id: conversationId, user_id: userBId },
+  ]);
+
+  if (addParticipantsErr) throw new Error(addParticipantsErr.message);
+  return conversationId;
+}
+
+async function notifyCandidateOnPipelineUpdate({
+  supabase,
+  recruiter,
+  candidateId,
+  jobId,
+  previousStatus,
+  newStatus,
+}) {
+  if (!candidateId || !newStatus || String(previousStatus || "") === String(newStatus)) return;
+
+  const { data: candidateRows, error: candidateErr } = await supabase
+    .from("profiles")
+    .select("id,name,email")
+    .eq("id", candidateId)
+    .limit(1);
+
+  if (candidateErr) throw new Error(candidateErr.message);
+  const candidate = candidateRows && candidateRows[0];
+  if (!candidate) return;
+
+  let jobTitle = "your application";
+  if (jobId) {
+    const { data: jobRows } = await supabase.from("jobs").select("title").eq("id", jobId).limit(1);
+    if (jobRows && jobRows[0] && jobRows[0].title) {
+      jobTitle = jobRows[0].title;
+    }
+  }
+
+  const conversationId = await findOrCreateDirectConversation(
+    supabase,
+    recruiter.id,
+    candidate.id,
+    `${recruiter.name || "Recruiter"} & ${candidate.name || "Candidate"}`
+  );
+
+  const inAppMessage = `Your application for ${jobTitle} has moved from ${previousStatus || "N/A"} to ${newStatus}.`;
+
+  const { error: messageErr } = await supabase.from("messages").insert([
+    {
+      conversation_id: conversationId,
+      sender_id: recruiter.id,
+      content: inAppMessage,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  if (messageErr) {
+    throw new Error(messageErr.message);
+  }
+}
+
+async function notifyCandidateOnInterviewScheduled({
+  supabase,
+  recruiter,
+  candidateId,
+  candidateName,
+  jobId,
+  jobTitle,
+  interviewDate,
+  interviewTime,
+  location,
+}) {
+  let candidate = null;
+
+  if (candidateId) {
+    const { data: candidateRows, error: candidateErr } = await supabase
+      .from("profiles")
+      .select("id,name,email,role")
+      .eq("id", candidateId)
+      .limit(1);
+    if (candidateErr) throw new Error(candidateErr.message);
+    candidate = candidateRows && candidateRows[0];
+  }
+
+  if (!candidate && candidateName) {
+    const { data: candidateRows, error: candidateErr } = await supabase
+      .from("profiles")
+      .select("id,name,email,role")
+      .eq("name", candidateName)
+      .eq("role", "student")
+      .limit(1);
+    if (candidateErr) throw new Error(candidateErr.message);
+    candidate = candidateRows && candidateRows[0];
+  }
+
+  if (!candidate) {
+    console.warn("[INTERVIEW_NOTIFY] Candidate profile not found for notification");
+    return;
+  }
+
+  let resolvedJobTitle = jobTitle || "your application";
+  if (jobId) {
+    const { data: jobRows } = await supabase.from("jobs").select("title").eq("id", jobId).limit(1);
+    if (jobRows && jobRows[0] && jobRows[0].title) {
+      resolvedJobTitle = jobRows[0].title;
+    }
+  }
+
+  const conversationId = await findOrCreateDirectConversation(
+    supabase,
+    recruiter.id,
+    candidate.id,
+    `${recruiter.name || "Recruiter"} & ${candidate.name || "Candidate"}`
+  );
+
+  const whenText = [interviewDate || "TBD date", interviewTime || "TBD time"].join(" at ");
+  const whereText = location || "TBD location";
+  const inAppMessage = `Interview scheduled for ${resolvedJobTitle}. When: ${whenText}. Where: ${whereText}.`;
+
+  const { error: messageErr } = await supabase.from("messages").insert([
+    {
+      conversation_id: conversationId,
+      sender_id: recruiter.id,
+      content: inAppMessage,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  if (messageErr) throw new Error(messageErr.message);
+}
+
 async function getRecruiterProfile(firebaseUid, supabase) {
   const { data: profiles, error } = await supabase
     .from("profiles")
@@ -155,21 +316,62 @@ router.get("/applicants", verifyFirebaseToken, async (req, res) => {
     const supabase = getSupabase();
     const recruiter = await getRecruiterProfile(firebaseUid, supabase);
 
-    const { data: applications, error } = await supabase
+    // Get applications with job and candidate details
+    const { data: applications, error: appError } = await supabase
       .from("applications")
-      .select(
-        "id,status,created_at,notes,job:jobs!applications_job_id_fkey(id,title,team),candidate:profiles!applications_candidate_id_fkey(id,name,role,college,avatar_url)"
-      )
+      .select("id,status,created_at,notes,job_id,candidate_id")
       .eq("recruiter_id", recruiter.id)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("[RECRUITER_APPLICANTS] Supabase error:", error);
-      return res.status(500).json({ message: error.message });
+    if (appError) {
+      console.error("[RECRUITER_APPLICANTS] Applications query error:", appError);
+      return res.status(500).json({ message: appError.message });
     }
 
-    console.log(`[RECRUITER_APPLICANTS] Retrieved ${(applications || []).length} applications`);
-    res.json({ applicants: applications || [] });
+    if (!applications || applications.length === 0) {
+      console.log("[RECRUITER_APPLICANTS] No applications found");
+      return res.json({ applicants: [] });
+    }
+
+    // Get job and candidate details separately
+    const jobIds = [...new Set((applications || []).map(a => a.job_id).filter(Boolean))];
+    const candidateIds = [...new Set((applications || []).map(a => a.candidate_id).filter(Boolean))];
+
+    let jobsMap = {};
+    let candidatesMap = {};
+
+    if (jobIds.length > 0) {
+      const { data: jobs, error: jobErr } = await supabase
+        .from("jobs")
+        .select("id,title,team")
+        .in("id", jobIds);
+      if (!jobErr && jobs) {
+        jobsMap = Object.fromEntries(jobs.map(j => [j.id, j]));
+      }
+    }
+
+    if (candidateIds.length > 0) {
+      const { data: candidates, error: candErr } = await supabase
+        .from("profiles")
+        .select("id,name,role,college,avatar_url")
+        .in("id", candidateIds);
+      if (!candErr && candidates) {
+        candidatesMap = Object.fromEntries(candidates.map(c => [c.id, c]));
+      }
+    }
+
+    // Join the data
+    const result = applications.map(app => ({
+      id: app.id,
+      status: app.status,
+      created_at: app.created_at,
+      notes: app.notes,
+      job: jobsMap[app.job_id] || { id: app.job_id, title: "Unknown Job", team: null },
+      candidate: candidatesMap[app.candidate_id] || { id: app.candidate_id, name: "Unknown Candidate", role: null, college: null, avatar_url: null }
+    }));
+
+    console.log(`[RECRUITER_APPLICANTS] Retrieved ${result.length} applications`);
+    res.json({ applicants: result });
   } catch (error) {
     console.error("[RECRUITER_APPLICANTS] Error:", error);
     const message = error.message.includes('<!DOCTYPE html>') 
@@ -229,6 +431,17 @@ router.patch("/applicants/:id", verifyFirebaseToken, async (req, res) => {
     const appId = req.params.id;
     const { status, notes } = req.body || {};
 
+    const { data: currentRows, error: currentErr } = await supabase
+      .from("applications")
+      .select("id,status,candidate_id,job_id")
+      .eq("id", appId)
+      .eq("recruiter_id", recruiter.id)
+      .limit(1);
+
+    if (currentErr) return res.status(500).json({ message: currentErr.message });
+    const currentApplicant = currentRows && currentRows[0];
+    if (!currentApplicant) return res.status(404).json({ message: "Applicant not found" });
+
     const updates = {
       updated_at: new Date().toISOString(),
     };
@@ -246,6 +459,21 @@ router.patch("/applicants/:id", verifyFirebaseToken, async (req, res) => {
     if (error) return res.status(500).json({ message: error.message });
     const applicant = data && data[0];
     if (!applicant) return res.status(404).json({ message: "Applicant not found" });
+
+    if (status && String(status) !== String(currentApplicant.status || "")) {
+      try {
+        await notifyCandidateOnPipelineUpdate({
+          supabase,
+          recruiter,
+          candidateId: currentApplicant.candidate_id,
+          jobId: currentApplicant.job_id,
+          previousStatus: currentApplicant.status,
+          newStatus: status,
+        });
+      } catch (notifyErr) {
+        console.warn("[PIPELINE_NOTIFY] Notification failed:", notifyErr.message || notifyErr);
+      }
+    }
 
     res.json({ applicant });
   } catch (error) {
@@ -388,7 +616,14 @@ router.get("/interviews", verifyFirebaseToken, async (req, res) => {
       .eq("recruiter_id", recruiter.id)
       .order("created_at", { ascending: false });
 
-    if (error) return res.status(500).json({ message: error.message });
+    if (error) {
+      const isMissingTable = String(error.message || "").toLowerCase().includes("recruiter_interviews") && String(error.message || "").toLowerCase().includes("does not exist");
+      return res.status(500).json({
+        message: isMissingTable
+          ? "Interview scheduling table is missing. Please apply backend/supabase/schema.sql in Supabase first."
+          : error.message,
+      });
+    }
 
     const interviews = (data || []).map((row) => ({
       id: row.id,
@@ -425,6 +660,9 @@ router.post("/interviews", verifyFirebaseToken, async (req, res) => {
       location,
       status,
       notes,
+      candidateId,
+      jobId,
+      applicationId,
     } = req.body || {};
 
     if (!candidateName) return res.status(400).json({ message: "candidateName is required" });
@@ -449,7 +687,49 @@ router.post("/interviews", verifyFirebaseToken, async (req, res) => {
       .select()
       .limit(1);
 
-    if (error) return res.status(500).json({ message: error.message });
+    if (error) {
+      const isMissingTable = String(error.message || "").toLowerCase().includes("recruiter_interviews") && String(error.message || "").toLowerCase().includes("does not exist");
+      return res.status(500).json({
+        message: isMissingTable
+          ? "Interview scheduling table is missing. Please apply backend/supabase/schema.sql in Supabase first."
+          : error.message,
+      });
+    }
+
+    let resolvedCandidateId = candidateId || null;
+    let resolvedJobId = jobId || null;
+
+    if (applicationId) {
+      const { data: appRows, error: appErr } = await supabase
+        .from("applications")
+        .select("id,candidate_id,job_id")
+        .eq("id", applicationId)
+        .eq("recruiter_id", recruiter.id)
+        .limit(1);
+
+      if (appErr) {
+        console.warn("[INTERVIEW_NOTIFY] Could not resolve application:", appErr.message);
+      } else if (appRows && appRows[0]) {
+        resolvedCandidateId = appRows[0].candidate_id || resolvedCandidateId;
+        resolvedJobId = appRows[0].job_id || resolvedJobId;
+      }
+    }
+
+    try {
+      await notifyCandidateOnInterviewScheduled({
+        supabase,
+        recruiter,
+        candidateId: resolvedCandidateId,
+        candidateName,
+        jobId: resolvedJobId,
+        jobTitle,
+        interviewDate: date,
+        interviewTime: time,
+        location,
+      });
+    } catch (notifyErr) {
+      console.warn("[INTERVIEW_NOTIFY] Notification failed:", notifyErr.message || notifyErr);
+    }
 
     const row = data && data[0];
     res.status(201).json({

@@ -11,6 +11,12 @@ export type RecruiterInterview = {
   createdAt: string;
 };
 
+export type CreateRecruiterInterviewInput = Omit<RecruiterInterview, "id" | "createdAt"> & {
+  candidateId?: string;
+  jobId?: string;
+  applicationId?: string;
+};
+
 type RecruiterSettings = {
   teamMembers: Array<{ id: string; name: string; role: string; email: string }>;
   notifications: {
@@ -22,6 +28,7 @@ type RecruiterSettings = {
 };
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const SETTINGS_CACHE_KEY = "recruiterSettingsCache";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");
@@ -37,6 +44,32 @@ const defaultSettings: RecruiterSettings = {
     dailyDigest: false,
   },
   defaultPipeline: ["New", "Screen", "Interview", "Offer", "Hired"],
+};
+
+const readSettingsCache = (): RecruiterSettings | null => {
+  try {
+    const raw = localStorage.getItem(SETTINGS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      teamMembers: Array.isArray(parsed.teamMembers) ? parsed.teamMembers : defaultSettings.teamMembers,
+      notifications: parsed.notifications || defaultSettings.notifications,
+      defaultPipeline: Array.isArray(parsed.defaultPipeline)
+        ? parsed.defaultPipeline
+        : defaultSettings.defaultPipeline,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeSettingsCache = (settings: RecruiterSettings) => {
+  try {
+    localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settings));
+  } catch {
+    // ignore cache write issues
+  }
 };
 
 export const loadSavedCandidates = async (): Promise<string[]> => {
@@ -82,18 +115,27 @@ export const loadRecruiterInterviews = async (): Promise<RecruiterInterview[]> =
 };
 
 export const addRecruiterInterview = async (
-  interview: Omit<RecruiterInterview, "id" | "createdAt">
-): Promise<RecruiterInterview | null> => {
+  interview: CreateRecruiterInterviewInput
+): Promise<RecruiterInterview> => {
   const headers = getAuthHeaders();
-  if (!headers) return null;
+  if (!headers) throw new Error("Not authenticated");
+
   const res = await fetch(`${API_BASE}/api/recruiter/interviews`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(interview),
   });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.interview || null;
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.message || "Failed to schedule interview");
+  }
+
+  if (!data?.interview) {
+    throw new Error("Interview response missing data");
+  }
+
+  return data.interview;
 };
 
 export const updateRecruiterInterview = async (
@@ -124,14 +166,18 @@ export const deleteRecruiterInterview = async (id: string): Promise<boolean> => 
 
 export const loadRecruiterSettings = async (): Promise<RecruiterSettings> => {
   const headers = getAuthHeaders();
-  if (!headers) return defaultSettings;
+  const cached = readSettingsCache();
+  if (!headers) return cached || defaultSettings;
   const res = await fetch(`${API_BASE}/api/recruiter/settings`, { headers });
-  if (!res.ok) return defaultSettings;
+  if (!res.ok) return cached || defaultSettings;
   const data = await res.json();
-  return data.settings || defaultSettings;
+  const resolved = data.settings || cached || defaultSettings;
+  writeSettingsCache(resolved);
+  return resolved;
 };
 
 export const saveRecruiterSettings = async (settings: RecruiterSettings): Promise<RecruiterSettings> => {
+  writeSettingsCache(settings);
   const headers = getAuthHeaders();
   if (!headers) return settings;
   const res = await fetch(`${API_BASE}/api/recruiter/settings`, {
@@ -141,7 +187,9 @@ export const saveRecruiterSettings = async (settings: RecruiterSettings): Promis
   });
   if (!res.ok) return settings;
   const data = await res.json();
-  return data.settings || settings;
+  const resolved = data.settings || settings;
+  writeSettingsCache(resolved);
+  return resolved;
 };
 
 export { defaultSettings };

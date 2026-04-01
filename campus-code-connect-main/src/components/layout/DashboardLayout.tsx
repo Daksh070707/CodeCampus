@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -6,7 +6,6 @@ import {
   MessageSquare,
   Briefcase,
   Users,
-  Bell,
   Settings,
   Bookmark,
   
@@ -16,12 +15,13 @@ import {
   LogOut,
   User,
   Sparkles,
-  BarChart3,
   FileCode,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import ThemeToggle from "@/components/ui/theme-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,11 +44,12 @@ const navigationItems = [
   { icon: Sparkles, label: "AI Matches", href: "/dashboard/matches" },
   { icon: Users, label: "Community", href: "/dashboard/community" },
   { icon: Users, label: "Connections", href: "/dashboard/connections" },
-  { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
+  { icon: Trophy, label: "Coding Games", href: "/dashboard/coding-games" },
 ];
 
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navRef = useRef<HTMLElement | null>(null);
   const [profile, setProfile] = useState<any>(() => {
     // Initialize from localStorage cache on mount
     const cached = localStorage.getItem("profileCache");
@@ -95,8 +96,20 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const userName = profile?.name || "User";
   const userRole = profile?.role || "Student";
 
+  useEffect(() => {
+    if (sidebarOpen && navRef.current) {
+      navRef.current.scrollTop = 0;
+    }
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (navRef.current) {
+      navRef.current.scrollTop = 0;
+    }
+  }, [location.pathname]);
+
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex overflow-x-hidden">
       {/* Mobile Overlay */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -112,7 +125,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-300 lg:h-screen ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-full sm:w-80 lg:w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-300 lg:h-screen ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -132,7 +145,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto min-h-0">
+          <nav ref={navRef} className="flex-1 p-4 space-y-1 min-h-0 overflow-y-hidden">
             {navigationItems.map((item) => (
               <Link
                 key={item.href}
@@ -198,7 +211,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 w-full">
         {/* Top Bar */}
         <header className="h-16 flex items-center justify-between px-4 lg:px-6 border-b border-border bg-card/50 backdrop-blur-lg sticky top-0 z-30">
           <button
@@ -211,10 +224,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           <div className="flex-1" />
 
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
-            </Button>
+            <ThemeToggle />
             <Button variant="ghost" size="icon" asChild>
               <Link to="/dashboard/settings">
                 <Settings className="w-5 h-5" />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Bell, Shield, Sliders, Save } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Bell, Shield, Sliders, Save, HelpCircle, MessageSquare, FileText, ExternalLink, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -17,6 +18,7 @@ const Settings = () => {
   const [publicProfile, setPublicProfile] = useState(true);
   const [jobMatchAlerts, setJobMatchAlerts] = useState(true);
   const [messagePreview, setMessagePreview] = useState(false);
+  const [expandedFAQ, setExpandedFAQ] = useState<number | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(SETTINGS_KEY);
@@ -47,6 +49,53 @@ const Settings = () => {
       setSaving(false);
       toast({ title: "Settings saved", description: "Your preferences are updated." });
     }, 400);
+  };
+
+  const faqs = [
+    {
+      question: "How do I create my profile?",
+      answer: "Go to your profile settings and fill in your details including bio, skills, and experience. You can add a profile picture and update your information anytime."
+    },
+    {
+      question: "How do I search and apply for jobs?",
+      answer: "Navigate to the Jobs section to browse available positions. Filter by company, location, or skills. Click on a job to see details and click 'Apply' to submit your application."
+    },
+    {
+      question: "Can I connect with other students?",
+      answer: "Yes! Use the Connections feature to find and connect with other students. You can view their profiles, see mutual connections, and send messages."
+    },
+    {
+      question: "How do I post to the feed?",
+      answer: "Go to the Feed section and click 'Create Post'. Add a title, description, and optionally code snippets or tags. Click 'Post' to share with the community."
+    },
+    {
+      question: "How do I use the messaging feature?",
+      answer: "Click on Conversations in the sidebar to view your messages. Select a conversation to chat or create a new message. You can send text, images, and files."
+    },
+    {
+      question: "How can I report inappropriate content?",
+      answer: "Click the three dots menu on any post or message and select 'Report'. Choose a reason and submit. Our team will review it within 24 hours."
+    },
+    {
+      question: "Is my data secure?",
+      answer: "We use industry-standard encryption and security practices. Your personal data is never shared with third parties without your consent."
+    },
+    {
+      question: "How do I delete my account?",
+      answer: "Go to Settings and scroll to the Account section. Click 'Delete Account' to permanently remove your profile and all associated data."
+    }
+  ];
+
+  const navigate = useNavigate();
+
+  const handleContactSupport = () => {
+    toast({ title: "Redirecting", description: "Opening Help & Support documentation..." });
+    navigate("/docs");
+  };
+
+  const handleFeedback = () => {
+    toast({ title: "Redirecting", description: "Taking you to the feedback form..." });
+    navigate("/docs");
   };
 
   return (
@@ -129,6 +178,120 @@ const Settings = () => {
           <CardContent className="space-y-4">
             <div className="text-sm text-muted-foreground">
               More preference options will appear here as we add personalization controls.
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Help & Support Section */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-3">
+            <HelpCircle className="w-5 h-5 text-recruiter" />
+            <CardTitle>Help & Support</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Quick Links */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-sm">Quick Links</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  className="justify-start h-auto py-3"
+                  onClick={handleContactSupport}
+                >
+                  <MessageSquare className="w-4 h-4 mr-2 flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium text-sm">Contact Support</div>
+                    <div className="text-xs text-muted-foreground">Email us your questions</div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 ml-auto flex-shrink-0" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="justify-start h-auto py-3"
+                  onClick={handleFeedback}
+                >
+                  <MessageSquare className="w-4 h-4 mr-2 flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium text-sm">Send Feedback</div>
+                    <div className="text-xs text-muted-foreground">Help us improve</div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 ml-auto flex-shrink-0" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="justify-start h-auto py-3"
+                  onClick={() => window.open("/docs", "_blank")}
+                >
+                  <FileText className="w-4 h-4 mr-2 flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium text-sm">Documentation</div>
+                    <div className="text-xs text-muted-foreground">Learn how to use features</div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 ml-auto flex-shrink-0" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="justify-start h-auto py-3"
+                  onClick={() => window.open("https://github.com/codecampus/issues", "_blank")}
+                >
+                  <FileText className="w-4 h-4 mr-2 flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium text-sm">Report Bug</div>
+                    <div className="text-xs text-muted-foreground">Found an issue?</div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 ml-auto flex-shrink-0" />
+                </Button>
+              </div>
+            </div>
+
+            {/* FAQ Section */}
+            <div className="space-y-3 border-t pt-6">
+              <h3 className="font-semibold text-sm">Frequently Asked Questions</h3>
+              <div className="space-y-2">
+                {faqs.map((faq, idx) => (
+                  <div
+                    key={idx}
+                    className="border border-border rounded-lg overflow-hidden"
+                  >
+                    <button
+                      className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors"
+                      onClick={() => setExpandedFAQ(expandedFAQ === idx ? null : idx)}
+                    >
+                      <span className="font-medium text-sm text-left">{faq.question}</span>
+                      <ChevronDown
+                        className={`w-4 h-4 flex-shrink-0 transition-transform ${
+                          expandedFAQ === idx ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                    {expandedFAQ === idx && (
+                      <div className="px-4 py-3 bg-secondary/30 border-t border-border">
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {faq.answer}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Support Info */}
+            <div className="border-t pt-6 space-y-3">
+              <h3 className="font-semibold text-sm">Need More Help?</h3>
+              <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium">Response Time</p>
+                <p className="text-sm text-muted-foreground">
+                  We typically respond to support requests within 24 hours during business days.
+                </p>
+              </div>
+            </div>
+
+            {/* Version & Info */}
+            <div className="border-t pt-6 text-xs text-muted-foreground space-y-1">
+              <p>Platform Version: 2.0.0</p>
+              <p>Last Updated: {new Date().toLocaleDateString()}</p>
+              <p className="text-xs">© 2024 CodeCampus. All rights reserved.</p>
             </div>
           </CardContent>
         </Card>

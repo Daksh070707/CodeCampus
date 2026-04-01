@@ -21,10 +21,44 @@ const Connections = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [loadingAllUsers, setLoadingAllUsers] = useState(false);
 
   useEffect(() => {
     loadConnections();
+    loadAllUsers();
   }, []);
+
+  const loadAllUsers = async () => {
+    setLoadingAllUsers(true);
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setLoadingAllUsers(false);
+      return;
+    }
+
+    try {
+      console.log(`[DISCOVER] Loading all users...`);
+      const res = await fetch(`${API_BASE}/api/connections/all`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log(`[DISCOVER] Loaded ${data.users?.length || 0} users`);
+        setAllUsers(data.users || []);
+      } else {
+        const error = await res.json();
+        console.error(`[DISCOVER] Error loading all users:`, error);
+        setAllUsers([]);
+      }
+    } catch (e) {
+      console.error(`[DISCOVER] Exception loading all users:`, e);
+      setAllUsers([]);
+    } finally {
+      setLoadingAllUsers(false);
+    }
+  };
 
   const loadConnections = async () => {
     setLoading(true);
@@ -183,6 +217,7 @@ const Connections = () => {
         setSearchQuery("");
         setSearchResults([]);
         await loadConnections();
+        await loadAllUsers();
       } else {
         const error = await res.json();
         alert(error.message || "Failed to send friend request");
@@ -206,6 +241,7 @@ const Connections = () => {
 
       if (res.ok) {
         await searchUsers(searchQuery);
+        await loadAllUsers();
       } else {
         const error = await res.json();
         alert(error.message || "Failed to accept request");
@@ -394,11 +430,73 @@ const Connections = () => {
                 </div>
               </div>
             ) : searchQuery.length === 0 ? (
-              <div className="text-center py-16">
-                <UserPlus className="w-16 h-16 mx-auto text-muted-foreground mb-4 opacity-30" />
-                <p className="text-lg font-medium text-muted-foreground">Start Discovering People</p>
-                <p className="text-sm text-muted-foreground mt-1">Search by name, email, or username to find and connect with others</p>
-              </div>
+              loadingAllUsers ? (
+                <div className="text-center py-12">
+                  <div className="inline-flex items-center gap-2">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 1 }}
+                    >
+                      <Search className="w-5 h-5 text-primary" />
+                    </motion.div>
+                    <span className="text-muted-foreground">Loading users...</span>
+                  </div>
+                </div>
+              ) : allUsers.length === 0 ? (
+                <div className="text-center py-16">
+                  <UserPlus className="w-16 h-16 mx-auto text-muted-foreground mb-4 opacity-30" />
+                  <p className="text-lg font-medium text-muted-foreground">No Users Available</p>
+                  <p className="text-sm text-muted-foreground mt-1">Try searching by name, email, or username to find people</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-4">Showing {allUsers.length} user{allUsers.length !== 1 ? 's' : ''}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {allUsers.map(user => (
+                      <UserCard
+                        key={user.id}
+                        user={user}
+                        actionButton={
+                          user.connection_status === "friends" ? (
+                            <Button
+                              className="flex-1"
+                              onClick={() => messageUser(user.id, user.name)}
+                            >
+                              <MessageSquare className="w-4 h-4 mr-2" />
+                              Message
+                            </Button>
+                          ) : user.connection_status === "request_sent" ? (
+                            <Button
+                              variant="outline"
+                              disabled
+                              className="flex-1"
+                            >
+                              <Clock className="w-4 h-4 mr-2" />
+                              Pending
+                            </Button>
+                          ) : user.connection_status === "request_received" ? (
+                            <Button
+                              className="flex-1 bg-primary"
+                              onClick={() => handleAcceptRequestFromSearch(user.request_id, user.id)}
+                            >
+                              <UserCheck className="w-4 h-4 mr-2" />
+                              Accept
+                            </Button>
+                          ) : (
+                            <Button
+                              className="flex-1 bg-primary hover:bg-primary/90"
+                              onClick={() => sendFriendRequest(user.id, user.name)}
+                            >
+                              <UserPlus className="w-4 h-4 mr-2" />
+                              Add Friend
+                            </Button>
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
             ) : searchResults.length === 0 ? (
               <div className="text-center py-16">
                 <UserPlus className="w-16 h-16 mx-auto text-muted-foreground mb-4 opacity-30" />

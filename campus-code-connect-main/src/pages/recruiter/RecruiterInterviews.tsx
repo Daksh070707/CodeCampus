@@ -9,6 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   addRecruiterInterview,
   deleteRecruiterInterview,
   loadRecruiterInterviews,
@@ -16,9 +23,28 @@ import {
   type RecruiterInterview,
 } from "@/lib/recruiterStorage";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+type CandidateOption = {
+  applicationId: string;
+  candidateId: string;
+  jobId: string;
+  label: string;
+  suggestedJobTitle: string;
+};
+
+type JobOption = {
+  id: string;
+  title: string;
+};
+
 const RecruiterInterviews = () => {
   const { toast } = useToast();
   const [interviews, setInterviews] = useState<RecruiterInterview[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [candidateOptions, setCandidateOptions] = useState<CandidateOption[]>([]);
+  const [jobOptions, setJobOptions] = useState<JobOption[]>([]);
+  const [selectedCandidateOption, setSelectedCandidateOption] = useState<CandidateOption | null>(null);
   const [form, setForm] = useState({
     candidateName: "",
     jobTitle: "",
@@ -35,43 +61,127 @@ const RecruiterInterviews = () => {
       const data = await loadRecruiterInterviews();
       setInterviews(data);
     };
+
+    const fetchOptions = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      setLoadingOptions(true);
+      try {
+        const [jobsRes, applicantsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/recruiter/jobs`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API_BASE}/api/recruiter/applicants`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+
+        const jobsData = await jobsRes.json().catch(() => ({}));
+        const applicantsData = await applicantsRes.json().catch(() => ({}));
+
+        if (!jobsRes.ok) {
+          console.error("[JOBS] API error:", jobsRes.status, jobsData);
+          toast({ title: "Load failed", description: jobsData.message || "Unable to load jobs", variant: "destructive" });
+        } else {
+          const jobs = (jobsData.jobs || []).map((job: any) => ({
+            id: String(job.id),
+            title: job.title || "Untitled Job",
+          }));
+          setJobOptions(jobs);
+        }
+
+        if (!applicantsRes.ok) {
+          console.error("[APPLICANTS] API error:", applicantsRes.status, applicantsData);
+          toast({ title: "Load failed", description: applicantsData.message || "Unable to load shortlisted students", variant: "destructive" });
+        } else {
+          const rows = applicantsData.applicants || [];
+          console.log("[CANDIDATES] Total applicants:", rows.length);
+
+          const shortlisted = rows.filter((row: any) => {
+            const status = String(row.status || "").toLowerCase();
+            return status === "shortlisted" || status === "interview" || status === "offer";
+          });
+
+          console.log("[CANDIDATES] Shortlisted count:", shortlisted.length);
+
+          const fallbackRows = shortlisted.length > 0
+            ? shortlisted
+            : rows.filter((row: any) => String(row.status || "").toLowerCase() !== "new");
+
+          console.log("[CANDIDATES] Final rows to process:", fallbackRows.length);
+
+          const candidates = fallbackRows.map((row: any) => ({
+            applicationId: String(row.id || ""),
+            candidateId: String(row?.candidate?.id || ""),
+            jobId: String(row?.job?.id || ""),
+            label: row?.candidate?.name || "Unnamed Candidate",
+            suggestedJobTitle: row?.job?.title || "",
+          }));
+
+          console.log("[CANDIDATES] Mapped candidates:", candidates);
+
+          const dedupedByName = Array.from(
+            new Map(candidates.map((c: CandidateOption) => [c.label.toLowerCase(), c])).values()
+          ) as CandidateOption[];
+
+          console.log("[CANDIDATES] Final deduped options:", dedupedByName.length);
+          setCandidateOptions(dedupedByName);
+        }
+      } catch (error) {
+        console.error("[FETCH_OPTIONS] Exception:", error);
+        toast({ title: "Load failed", description: "Unable to load shortlist/job options", variant: "destructive" });
+      } finally {
+        setLoadingOptions(false);
+      }
+    };
+
     fetchInterviews();
+    fetchOptions();
   }, []);
 
   const handleAddInterview = async () => {
     if (!form.candidateName.trim()) {
-      toast({ title: "Candidate required", description: "Add a candidate name.", variant: "destructive" });
+      toast({ title: "Candidate required", description: "Select a shortlisted candidate.", variant: "destructive" });
       return;
     }
 
-    const newInterview = await addRecruiterInterview({
-      candidateName: form.candidateName.trim(),
-      jobTitle: form.jobTitle.trim(),
-      interviewer: form.interviewer.trim(),
-      date: form.date || null,
-      time: form.time || null,
-      location: form.location.trim(),
-      status: form.status,
-      notes: form.notes.trim(),
-    });
-
-    if (!newInterview) {
-      toast({ title: "Schedule failed", description: "Could not save interview.", variant: "destructive" });
+    if (!form.jobTitle.trim()) {
+      toast({ title: "Job required", description: "Select a job title.", variant: "destructive" });
       return;
     }
 
-    setInterviews((prev) => [newInterview, ...prev]);
-    setForm({
-      candidateName: "",
-      jobTitle: "",
-      interviewer: "",
-      date: "",
-      time: "",
-      location: "",
-      status: "Scheduled",
-      notes: "",
-    });
-    toast({ title: "Interview scheduled", description: "Interview added to the calendar." });
+    try {
+      const newInterview = await addRecruiterInterview({
+        candidateName: form.candidateName.trim(),
+        jobTitle: form.jobTitle.trim(),
+        interviewer: form.interviewer.trim(),
+        date: form.date || null,
+        time: form.time || null,
+        location: form.location.trim(),
+        status: form.status,
+        notes: form.notes.trim(),
+        applicationId: selectedCandidateOption?.applicationId,
+        candidateId: selectedCandidateOption?.candidateId,
+        jobId: selectedCandidateOption?.jobId,
+      });
+
+      setInterviews((prev) => [newInterview, ...prev]);
+      setForm({
+        candidateName: "",
+        jobTitle: "",
+        interviewer: "",
+        date: "",
+        time: "",
+        location: "",
+        status: "Scheduled",
+        notes: "",
+      });
+      setSelectedCandidateOption(null);
+      toast({ title: "Interview scheduled", description: "Interview added to the calendar." });
+    } catch (error) {
+      toast({
+        title: "Schedule failed",
+        description: (error as Error).message || "Could not save interview.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleUpdateStatus = async (id: string, status: RecruiterInterview["status"]) => {
@@ -110,16 +220,45 @@ const RecruiterInterviews = () => {
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="grid md:grid-cols-2 gap-4">
-              <Input
-                placeholder="Candidate name"
-                value={form.candidateName}
-                onChange={(e) => setForm((prev) => ({ ...prev, candidateName: e.target.value }))}
-              />
-              <Input
-                placeholder="Job title"
-                value={form.jobTitle}
-                onChange={(e) => setForm((prev) => ({ ...prev, jobTitle: e.target.value }))}
-              />
+              <Select
+                value={selectedCandidateOption?.applicationId || undefined}
+                onValueChange={(value) => {
+                  const selected = candidateOptions.find((item) => item.applicationId === value);
+                  setSelectedCandidateOption(selected || null);
+                  setForm((prev) => ({
+                    ...prev,
+                    candidateName: selected?.label || "",
+                    jobTitle: prev.jobTitle || selected?.suggestedJobTitle || "",
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingOptions ? "Loading shortlisted students..." : "Select shortlisted student"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidateOptions.map((candidate) => (
+                    <SelectItem key={candidate.applicationId} value={candidate.applicationId}>
+                      {candidate.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={form.jobTitle || undefined}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, jobTitle: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingOptions ? "Loading posted jobs..." : "Select posted job"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobOptions.map((job) => (
+                    <SelectItem key={job.id} value={job.title}>
+                      {job.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid md:grid-cols-3 gap-4">
               <Input

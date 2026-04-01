@@ -1,9 +1,10 @@
 import { motion } from "framer-motion";
-import { Plus, Search, Filter, Heart, MessageSquare, Bookmark, Share2, MoreHorizontal, Clock, Code2, Image as ImageIcon, Link as LinkIcon, X } from "lucide-react";
+import { Plus, Search, Filter, Heart, MessageSquare, Bookmark, Share2, MoreHorizontal, Clock, Code2, Image as ImageIcon, Link as LinkIcon, X, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -14,6 +15,11 @@ import { getProfile } from "@/lib/profile";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+const normalizeCollege = (value?: string | null) => {
+  if (!value) return "";
+  return value.trim().replace(/\s+/g, " ");
+};
 
 const Community = () => {
   const [showComposer, setShowComposer] = useState(false);
@@ -29,6 +35,13 @@ const Community = () => {
   const [documentLink, setDocumentLink] = useState("");
   const [showCodeInput, setShowCodeInput] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
+  
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    tags: [] as string[],
+  });
   
   // File input refs
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +59,9 @@ const Community = () => {
         const p = await getProfile(id);
         setProfile(p);
 
-        if (!p || !p.college) {
+        const normalizedCollege = normalizeCollege(p?.college);
+
+        if (!p || !normalizedCollege) {
           setPosts([]);
           return setLoading(false);
         }
@@ -54,25 +69,31 @@ const Community = () => {
         const { data, error } = await supabase
           .from("posts")
           .select("*")
-          .eq("college", p.college)
+          .or("source.eq.community,and(source.is.null,college.not.is.null)")
           .order("created_at", { ascending: false });
 
         if (error) {
           console.warn("Failed to load posts:", error);
           setPosts([]);
         } else {
-          setPosts(data || []);
+          const normalizedCommunityKey = normalizedCollege.toLowerCase();
+          const communityPosts = (data || []).filter((post: any) => {
+            const postCollege = normalizeCollege(post?.college).toLowerCase();
+            return postCollege === normalizedCommunityKey;
+          });
+
+          setPosts(communityPosts);
 
           // mark posts liked by current user
           try {
             const stored = localStorage.getItem("user");
             const user = stored ? JSON.parse(stored) : null;
             const uid = user ? user.id || user.uid || (user.user && user.user.id) : null;
-            if (uid && Array.isArray(data) && data.length > 0) {
-              const ids = data.map((p: any) => p.id).filter(Boolean);
+            if (uid && Array.isArray(communityPosts) && communityPosts.length > 0) {
+              const ids = communityPosts.map((p: any) => p.id).filter(Boolean);
               const { data: likes } = await supabase.from("likes").select("post_id").in("post_id", ids).eq("user_id", uid);
               const likedIds = new Set((likes || []).map((l: any) => l.post_id));
-              setPosts((data || []).map((p: any) => ({ ...p, liked: likedIds.has(p.id) })));
+              setPosts((communityPosts || []).map((p: any) => ({ ...p, liked: likedIds.has(p.id) })));
             }
           } catch (e) {
             // ignore
@@ -98,6 +119,15 @@ const Community = () => {
     const user = JSON.parse(stored);
 
     try {
+      const normalizedCollege = normalizeCollege(
+        profile?.college || user?.college || user?.user?.college || ""
+      );
+
+      if (!normalizedCollege) {
+        alert("Please complete your profile with a college before posting in Community.");
+        return;
+      }
+
       const payload = {
         user_id: profile?.id ?? null,
         author: profile?.name || user.displayName || user.name || user.email || "Anonymous",
@@ -105,7 +135,8 @@ const Community = () => {
         code: codeSnippet || null,
         image: attachedImage || null,
         document_link: documentLink || null,
-        college: profile?.college || null,
+        college: normalizedCollege,
+        source: "community",
         created_at: new Date().toISOString(),
       };
 
@@ -333,6 +364,31 @@ const Community = () => {
     setShowShareModal((s) => ({ ...s, [post.id]: true }));
   };
 
+  const deletePost = async (post: any) => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const ok = window.confirm("Delete this post? This action cannot be undone.");
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/posts/${post.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Failed to delete post");
+      }
+
+      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+      alert("Post deleted");
+    } catch (e: any) {
+      alert(e?.message || "Failed to delete post");
+    }
+  };
+
   const closeShareModal = (postId: any) => setShowShareModal((s) => ({ ...s, [postId]: false }));
 
   const shareToMessages = (post: any) => {
@@ -370,6 +426,47 @@ const Community = () => {
     closeShareModal(post.id);
   };
 
+  // Filter posts based on search and tag filters
+  const getFilteredPosts = () => {
+    return posts.filter(post => {
+      // Search filter - search in title, content, author, and tags
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matches = 
+          (post.title && post.title.toLowerCase().includes(query)) ||
+          (post.content && post.content.toLowerCase().includes(query)) ||
+          (post.author && post.author.toLowerCase().includes(query)) ||
+          (Array.isArray(post.tags) && post.tags.some((tag: string) => tag.toLowerCase().includes(query)));
+        
+        if (!matches) return false;
+      }
+      
+      // Tag filter
+      if (filters.tags.length > 0) {
+        const hasMatchingTag = Array.isArray(post.tags) && 
+          filters.tags.some(tag => (post.tags || []).includes(tag));
+        if (!hasMatchingTag) return false;
+      }
+      
+      return true;
+    });
+  };
+
+  const filteredPosts = getFilteredPosts();
+
+  // Get unique tags from all posts for filter UI
+  const availableTags = Array.from(new Set(
+    posts.flatMap(post => post.tags || [])
+  )).sort() as string[];
+
+  // Clear filters
+  const clearFilters = () => {
+    setSearchQuery("");
+    setFilters({ tags: [] });
+  };
+
+  const hasActiveFilters = searchQuery || filters.tags.length > 0;
+
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto space-y-6">
@@ -379,7 +476,11 @@ const Community = () => {
             <p className="text-muted-foreground">Posts from students in your college</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon">
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={() => setShowFilters(!showFilters)}
+            >
               <Filter className="w-4 h-4" />
             </Button>
             <Button variant="hero" onClick={() => setShowComposer(true)}>
@@ -392,8 +493,65 @@ const Community = () => {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search posts, tags, or users..." className="pl-10" />
+            <Input 
+              placeholder="Search posts, tags, or users..." 
+              className="pl-10" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
+
+          {/* Filter UI */}
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className="mt-4"
+            >
+              <Card>
+                <CardContent className="p-4">
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-sm font-semibold mb-3 block">Filter by Tags</Label>
+                      {availableTags.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {availableTags.map(tag => (
+                            <Badge
+                              key={tag}
+                              variant={filters.tags.includes(tag) ? "default" : "outline"}
+                              className="cursor-pointer"
+                              onClick={() => {
+                                setFilters(prev => ({
+                                  ...prev,
+                                  tags: prev.tags.includes(tag)
+                                    ? prev.tags.filter(t => t !== tag)
+                                    : [...prev.tags, tag]
+                                }));
+                              }}
+                            >
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No tags available yet</p>
+                      )}
+                    </div>
+                    
+                    {hasActiveFilters && (
+                      <div className="flex justify-end pt-2 border-t">
+                        <Button variant="ghost" size="sm" onClick={clearFilters}>
+                          <X className="w-4 h-4 mr-2" />
+                          Clear filters
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
         </motion.div>
 
         {showComposer && (
@@ -545,10 +703,19 @@ const Community = () => {
         <div className="space-y-4">
           {loading ? (
             <div className="text-sm text-muted-foreground">Loading Community posts…</div>
-          ) : posts.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No posts yet in your college community.</div>
+          ) : filteredPosts.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-sm text-muted-foreground mb-2">
+                {posts.length === 0 ? "No posts yet in your college community." : "No posts match your filters."}
+              </div>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="mt-2">
+                  Clear filters to see all posts
+                </Button>
+              )}
+            </div>
           ) : (
-            posts.map((post, index) => (
+            filteredPosts.map((post, index) => (
               <motion.div key={post.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 + index * 0.05 }}>
                 <Card className="overflow-hidden">
                   <CardHeader className="pb-3">
@@ -580,8 +747,17 @@ const Community = () => {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>Report</DropdownMenuItem>
-                          <DropdownMenuItem>Hide</DropdownMenuItem>
+                          {profile && profile.id === post.user_id ? (
+                            <DropdownMenuItem onClick={() => deletePost(post)} className="text-destructive">
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Post
+                            </DropdownMenuItem>
+                          ) : (
+                            <>
+                              <DropdownMenuItem>Report</DropdownMenuItem>
+                              <DropdownMenuItem>Hide</DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -592,9 +768,9 @@ const Community = () => {
                       <p className="text-muted-foreground whitespace-pre-line">{post.content}</p>
                     </div>
 
-                    {post.image && (
+                    {(post.image || post.image_url) && (
                       <div className="rounded-lg overflow-hidden">
-                        <img src={post.image} alt="post" className="max-h-[300px] w-full object-cover" />
+                        <img src={post.image || post.image_url} alt="post" className="max-h-[300px] w-full object-cover" />
                       </div>
                     )}
 

@@ -61,6 +61,7 @@ const RecruiterMessages = () => {
   const messageChannelRef = useRef<RealtimeChannel | null>(null);
   const conversationChannelRef = useRef<RealtimeChannel | null>(null);
   const pendingConversationId = searchParams.get("conv");
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -136,6 +137,12 @@ const RecruiterMessages = () => {
     const token = localStorage.getItem("token");
     if (!token) return setLoadingMessages(false);
 
+    // Clear any existing polling
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
     if (messageChannelRef.current) {
       supabase.removeChannel(messageChannelRef.current);
     }
@@ -148,6 +155,7 @@ const RecruiterMessages = () => {
       const body = await res.json();
       setMessagesList(body.messages || []);
 
+      // Set up real-time listener
       messageChannelRef.current = supabase
         .channel(`recruiter_messages_${conv.id}`)
         .on(
@@ -172,10 +180,10 @@ const RecruiterMessages = () => {
               ...newMsg,
               author: profile?.name || "",
               avatar: profile?.avatar_url || "",
-            };
+            } as any;
 
             setMessagesList((prev) => {
-              const exists = prev.some((m) => m.id === enrichedMsg.id);
+              const exists = prev.some((m: any) => m.id === enrichedMsg.id);
               if (exists) return prev;
               return [...prev, enrichedMsg];
             });
@@ -184,6 +192,32 @@ const RecruiterMessages = () => {
           }
         )
         .subscribe();
+
+      // Set up polling as backup (every 2 seconds)
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const pollRes = await fetch(`${API_BASE}/api/messages/conversations/${conv.id}/messages`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (pollRes.ok) {
+            const pollBody = await pollRes.json();
+            const newMessages = pollBody.messages || [];
+            
+            setMessagesList((prev) => {
+              const existingIds = new Set(prev.map(m => m.id));
+              const messagesToAdd = newMessages.filter((m: any) => !existingIds.has(m.id));
+              
+              if (messagesToAdd.length > 0) {
+                loadConversations();
+                return [...prev, ...messagesToAdd];
+              }
+              return prev;
+            });
+          }
+        } catch (e) {
+          console.warn("Polling error:", e);
+        }
+      }, 2000);
 
       await markAsRead(conv.id);
     } catch (e) {
@@ -235,6 +269,13 @@ const RecruiterMessages = () => {
       if (!res.ok) {
         const error = await res.json().catch(() => ({ message: "Send failed" }));
         throw new Error(error.message || "Send failed");
+      }
+
+      // Immediately add the sent message to the UI without waiting for real-time
+      const responseData = await res.json();
+      if (responseData.message) {
+        setMessagesList((prev) => [...prev, responseData.message]);
+        loadConversations();
       }
     } catch (e: any) {
       alert(`Failed to send message: ${e.message || "Unknown error"}`);
@@ -340,6 +381,9 @@ const RecruiterMessages = () => {
       }
       if (conversationChannelRef.current) {
         supabase.removeChannel(conversationChannelRef.current);
+      }
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
       }
     };
   }, []);

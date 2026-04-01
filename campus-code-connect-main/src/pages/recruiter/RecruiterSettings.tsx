@@ -9,9 +9,24 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { saveRecruiterSettings } from "@/lib/recruiterStorage";
 
+type TeamMember = { id: string; name: string; role: string; email: string };
+
+const normalizeTeamMembers = (members: any[]): TeamMember[] => {
+  if (!Array.isArray(members)) return [];
+  return members
+    .map((member) => {
+      const name = (member?.name ?? member?.fullName ?? member?.teammateName ?? "").toString().trim();
+      const email = (member?.email ?? "").toString().trim();
+      const role = (member?.role ?? member?.title ?? "").toString().trim();
+      const id = (member?.id ?? crypto.randomUUID()).toString();
+      return { id, name, role, email };
+    })
+    .filter((member) => member.name || member.email);
+};
+
 const RecruiterSettings = () => {
   const { toast } = useToast();
-  const [teamMembers, setTeamMembers] = useState<Array<{ id: string; name: string; role: string; email: string }>>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [notifications, setNotifications] = useState({
     emailUpdates: true,
     interviewReminders: true,
@@ -26,7 +41,7 @@ const RecruiterSettings = () => {
     const fetchSettings = async () => {
       const { loadRecruiterSettings } = await import("@/lib/recruiterStorage");
       const settings = await loadRecruiterSettings();
-      setTeamMembers(settings.teamMembers);
+      setTeamMembers(normalizeTeamMembers(settings.teamMembers));
       setNotifications(settings.notifications);
       setDefaultPipeline(settings.defaultPipeline);
       setIsLoading(false);
@@ -58,10 +73,27 @@ const RecruiterSettings = () => {
     ];
     setTeamMembers(next);
     setNewMember({ name: "", role: "", email: "" });
+
+    saveRecruiterSettings({
+      teamMembers: next,
+      notifications,
+      defaultPipeline,
+    }).then((saved) => {
+      setTeamMembers(normalizeTeamMembers(saved.teamMembers));
+    });
   };
 
   const handleRemoveMember = (id: string) => {
-    setTeamMembers((prev) => prev.filter((member) => member.id !== id));
+    const next = teamMembers.filter((member) => member.id !== id);
+    setTeamMembers(next);
+
+    saveRecruiterSettings({
+      teamMembers: next,
+      notifications,
+      defaultPipeline,
+    }).then((saved) => {
+      setTeamMembers(normalizeTeamMembers(saved.teamMembers));
+    });
   };
 
   const handleAddStage = () => {

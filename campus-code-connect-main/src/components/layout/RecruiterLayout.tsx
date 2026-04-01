@@ -13,12 +13,14 @@ import {
   MessageSquare,
   Search,
   Settings,
+  Trophy,
   Users,
   X,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import ThemeToggle from "@/components/ui/theme-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +43,7 @@ const recruiterNav = [
   { icon: Search, label: "Candidates", href: "/recruiter/candidates" },
   { icon: MessageSquare, label: "Messages", href: "/recruiter/messages" },
   { icon: Users, label: "Connections", href: "/recruiter/connections" },
+  { icon: Trophy, label: "Coding Games", href: "/recruiter/coding-games" },
   { icon: Calendar, label: "Interviews", href: "/recruiter/interviews" },
   { icon: Settings, label: "Settings", href: "/recruiter/settings" },
 ];
@@ -194,6 +197,7 @@ const RecruiterLayout = ({ children }: RecruiterLayoutProps) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Badge variant="recruiter" className="text-xs">Pro Hiring</Badge>
             <Button variant="recruiter" size="sm" asChild>
               <Link to="/recruiter/jobs">Create Job</Link>

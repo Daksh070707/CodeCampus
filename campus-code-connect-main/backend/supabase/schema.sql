@@ -154,12 +154,20 @@ create table if not exists messages (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid references conversations(id) on delete cascade,
   sender_id uuid references profiles(id) on delete set null,
-  content text not null,
+  content text,
+  image_url text,
+  attachment_url text,
+  attachment_name text,
+  is_read boolean default false,
   created_at timestamptz default now(),
   read_by uuid[] default array[]::uuid[]
 );
 
 -- Indexes
+create index if not exists idx_messages_conversation_id on messages(conversation_id);
+create index if not exists idx_messages_created_at on messages(created_at);
+create index if not exists idx_messages_is_read on messages(is_read);
+create index if not exists idx_messages_conversation_created on messages(conversation_id, created_at DESC);
 create index if not exists idx_jobs_company on jobs(company);
 create index if not exists idx_jobs_recruiter_id on jobs(recruiter_id);
 create index if not exists idx_comments_post_id on comments(post_id);

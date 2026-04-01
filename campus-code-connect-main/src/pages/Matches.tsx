@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { getProfile } from "@/lib/profile";
-import { jobs as allJobs } from "./Jobs";
+import API from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 const stopwords = new Set([
   "the","a","an","and","or","to","of","in","on","for","with","is","are","it","this","that","as","by","from","we","you","i",
@@ -21,14 +22,69 @@ function extractKeywordsFromText(text = ""){
     .filter(w => w.length > 2 && !stopwords.has(w));
 }
 
+// Format date helper
+function formatDate(dateString: string | undefined) {
+  if (!dateString) return "Recently posted";
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - date.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "1 day ago";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  return `${Math.floor(diffDays / 30)} months ago`;
+}
+
 const Matches = () => {
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<any[]>([]);
   const [profile, setProfile] = useState<any>(null);
+  const [applyingJobIds, setApplyingJobIds] = useState<Set<string>>(new Set());
+  const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
+
+  const applyToJob = async (jobId: string, jobTitle: string) => {
+    if (applyingJobIds.has(jobId) || appliedJobIds.has(jobId)) return;
+
+    setApplyingJobIds((prev) => new Set(prev).add(jobId));
+    try {
+      await API.post(`/jobs/${jobId}/apply`);
+      setAppliedJobIds((prev) => new Set(prev).add(jobId));
+      toast({
+        title: "Application submitted",
+        description: `Your application for ${jobTitle} has been submitted successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.response?.data?.message || "Failed to apply. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setApplyingJobIds((prev) => {
+        const updated = new Set(prev);
+        updated.delete(jobId);
+        return updated;
+      });
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+
+      // First, fetch all jobs from API
+      let allJobs: any[] = [];
+      try {
+        const response = await API.get('/jobs');
+        allJobs = response.data.jobs || [];
+      } catch (error) {
+        console.error("Error fetching jobs:", error);
+        setLoading(false);
+        return;
+      }
 
       const stored = localStorage.getItem("user");
       if (!stored) {
@@ -162,7 +218,7 @@ const Matches = () => {
                             </span>
                             <span className="flex items-center gap-1">
                               <Clock className="w-4 h-4" />
-                              {job.posted}
+                              {formatDate(job.created_at || job.posted)}
                             </span>
                           </div>
 
@@ -180,8 +236,17 @@ const Matches = () => {
                         <div className="flex items-center gap-2">
                           <Badge variant={job.type === "Internship" ? "recruiter" : "outline"} className="text-xs">{job.type}</Badge>
                         </div>
-                        <Button size="sm" className="mt-auto">
-                          Apply Now
+                        <Button
+                          size="sm"
+                          className="mt-auto"
+                          disabled={applyingJobIds.has(job.id) || appliedJobIds.has(job.id)}
+                          onClick={() => applyToJob(job.id, job.title)}
+                        >
+                          {appliedJobIds.has(job.id)
+                            ? "Applied"
+                            : applyingJobIds.has(job.id)
+                            ? "Applying..."
+                            : "Apply Now"}
                           <ExternalLink className="w-3 h-3 ml-1" />
                         </Button>
                       </div>

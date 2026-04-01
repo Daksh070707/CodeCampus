@@ -163,23 +163,30 @@ const RecruiterApplicants = () => {
   };
 
   const handleScheduleInterview = async (applicant: Applicant) => {
-    const candidateName = applicant.candidate?.name || "Candidate";
-    const jobTitle = applicant.job?.title || "";
-    const interview = await addRecruiterInterview({
-      candidateName,
-      jobTitle,
-      interviewer: "",
-      date: null,
-      time: null,
-      location: "",
-      status: "Scheduled",
-      notes: "",
-    });
-    if (interview) {
+    try {
+      const candidateName = applicant.candidate?.name || "Candidate";
+      const jobTitle = applicant.job?.title || "";
+      await addRecruiterInterview({
+        candidateName,
+        jobTitle,
+        interviewer: "",
+        date: null,
+        time: null,
+        location: "",
+        status: "Scheduled",
+        notes: "",
+        applicationId: applicant.id,
+        candidateId: applicant.candidate?.id,
+        jobId: applicant.job?.id,
+      });
       toast({ title: "Interview draft created", description: "Complete details in Interviews." });
       navigate("/recruiter/interviews");
-    } else {
-      toast({ title: "Failed to create", description: "Could not create interview draft.", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to create",
+        description: (error as Error).message || "Could not create interview draft.",
+        variant: "destructive",
+      });
     }
   };
 

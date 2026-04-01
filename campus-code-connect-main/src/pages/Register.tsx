@@ -6,12 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GlassCard } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import API from "@/lib/api";
 import { auth } from "@/lib/firebase";
-import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
-
-
+import { createUserWithEmailAndPassword, sendEmailVerification, signOut } from "firebase/auth";
+import { COLLEGES } from "@/lib/colleges";
 
 type Role = "student" | "recruiter";
 
@@ -43,12 +49,7 @@ const Register = () => {
       const user = cred.user;
 
       // Send verification email
-      try {
-        await sendEmailVerification(user);
-      } catch (err) {
-        console.warn('Failed to send verification email', err);
-        // fall through — still create profile
-      }
+      await sendEmailVerification(user);
 
       // Sync profile to backend (service role) and store role
       try {
@@ -66,13 +67,29 @@ const Register = () => {
         } else {
           localStorage.setItem("role", formData.role);
         }
+
+        // Auto-join college community for students
+        if (formData.role === "student" && formData.college) {
+          try {
+            await API.post("/auth/join-college-community", { college: formData.college });
+            console.log("Successfully joined college community during registration");
+          } catch (joinError) {
+            console.warn("Failed to join college community:", joinError.message);
+            // Don't fail the registration if community join fails
+          }
+        }
       } catch (err) {
         console.warn('Failed to sync profile after Firebase sign-up', err);
         localStorage.setItem("role", formData.role);
       }
 
-      toast({ title: 'Account created!', description: 'A verification email was sent — please check your inbox.' });
-      navigate(formData.role === "recruiter" ? "/recruiter" : "/dashboard/feed");
+      await signOut(auth);
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("role");
+
+      toast({ title: 'Account created!', description: 'Verification email sent. Please verify your email before logging in.' });
+      navigate("/login");
     } catch (error: any) {
       console.error('Register error:', error);
       const message = error?.message || error?.error || error?.response?.data?.message || JSON.stringify(error);
@@ -225,19 +242,34 @@ const Register = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="college">{formData.role === "student" ? "College" : "Company"}</Label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="college"
-                      type="text"
-                      placeholder={formData.role === "student" ? "Stanford University" : "Tech Corp Inc."}
-                      className="pl-10"
-                      value={formData.college}
-                      onChange={(e) => setFormData({ ...formData, college: e.target.value })}
-                      required
-                    />
-                  </div>
+                  <Label htmlFor="college">{formData.role === "student" ? "College / University" : "Company"}</Label>
+                  {formData.role === "student" ? (
+                    <Select value={formData.college} onValueChange={(value) => setFormData({ ...formData, college: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select your college..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        {COLLEGES.map((collegeName) => (
+                          <SelectItem key={collegeName} value={collegeName}>
+                            {collegeName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="college"
+                        type="text"
+                        placeholder="Tech Corp Inc."
+                        className="pl-10"
+                        value={formData.college}
+                        onChange={(e) => setFormData({ ...formData, college: e.target.value })}
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

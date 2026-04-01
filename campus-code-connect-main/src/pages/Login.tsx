@@ -9,7 +9,7 @@ import { GlassCard } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import API from "@/lib/api"; // legacy API helper
 import { signInWithGoogle, auth } from "@/lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { sendEmailVerification, signInWithEmailAndPassword, signOut } from "firebase/auth";
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -32,32 +32,52 @@ const Login = () => {
       // Use Firebase email/password auth
       const cred = await signInWithEmailAndPassword(auth, formData.email, formData.password);
       const user = cred.user;
+
+      await user.reload();
+      if (!user.emailVerified) {
+        try {
+          await sendEmailVerification(user);
+        } catch (verificationError) {
+          console.warn("Failed to resend verification email", verificationError);
+        }
+        await signOut(auth);
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        localStorage.removeItem("role");
+
+        toast({
+          title: "Email not verified",
+          description: "Please verify your email first. We sent another verification email to your inbox.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Get Firebase ID token
       const idToken = await user.getIdToken();
       // Temporarily store Firebase token so API call can attach it
       localStorage.setItem("token", idToken);
 
-      // Sync Firebase user to backend profile (service role)
-      try {
-        const resp = await API.post("/auth/firebase", { role: loginRole });
-        const userInfo = resp.data?.user;
-        if (userInfo) localStorage.setItem("user", JSON.stringify(userInfo));
-        if (userInfo?.role) localStorage.setItem("role", userInfo.role);
-      } catch (err) {
-        console.warn("Failed to exchange Firebase token with backend", err);
-      }
+      // Sync Firebase user to backend profile and enforce role/email constraints.
+      const resp = await API.post("/auth/firebase", { role: loginRole });
+      const userInfo = resp.data?.user;
+      if (userInfo) localStorage.setItem("user", JSON.stringify(userInfo));
 
-      if (!localStorage.getItem("role")) {
-        localStorage.setItem("role", loginRole);
-      }
+      const resolvedRole = userInfo?.role || loginRole;
+      localStorage.setItem("role", resolvedRole);
 
       toast({ title: "Welcome back!", description: "Login successful. Redirecting..." });
-      navigate(loginRole === "recruiter" ? "/recruiter" : "/dashboard/feed");
+      navigate(resolvedRole === "recruiter" ? "/recruiter" : "/dashboard/feed");
     } catch (error: any) {
       console.error('Login error:', error);
-      const errMsg = error?.message || error?.error || error?.response?.data?.message || "Invalid email or password";
+      const status = error?.response?.status;
+      const backendMessage = error?.response?.data?.message;
+      const errMsg =
+        status === 409
+          ? backendMessage || "This email is already registered with a different account type."
+          : error?.message || error?.error || backendMessage || "Invalid email or password";
       toast({
-        title: "Login failed",
+        title: status === 409 ? "Account type mismatch" : "Login failed",
         description: errMsg,
         variant: "destructive",
       });
@@ -74,25 +94,31 @@ const Login = () => {
       // Get Firebase ID token and sync backend profile
       const idToken = await user.getIdToken();
       localStorage.setItem("token", idToken);
-      try {
-        const resp = await API.post("/auth/firebase", { role: loginRole });
-        const userInfo = resp.data?.user;
-        if (userInfo) localStorage.setItem("user", JSON.stringify(userInfo));
-        if (userInfo?.role) localStorage.setItem("role", userInfo.role);
-      } catch (err) {
-        // fallback to storing basic user info
+      const resp = await API.post("/auth/firebase", { role: loginRole });
+      const userInfo = resp.data?.user;
+      if (userInfo) {
+        localStorage.setItem("user", JSON.stringify(userInfo));
+      } else {
         localStorage.setItem("user", JSON.stringify({ uid: user.uid, displayName: user.displayName, email: user.email, photoURL: user.photoURL }));
-        console.warn("Failed to exchange Firebase token with backend", err);
       }
 
-      if (!localStorage.getItem("role")) {
-        localStorage.setItem("role", loginRole);
-      }
+      const resolvedRole = userInfo?.role || loginRole;
+      localStorage.setItem("role", resolvedRole);
 
       toast({ title: "Signed in", description: `Welcome ${user.displayName}` });
-      navigate(loginRole === "recruiter" ? "/recruiter" : "/dashboard/feed");
+      navigate(resolvedRole === "recruiter" ? "/recruiter" : "/dashboard/feed");
     } catch (error: any) {
-      toast({ title: "Authentication failed", description: error.message || "Google sign-in failed", variant: "destructive" });
+      const status = error?.response?.status;
+      const backendMessage = error?.response?.data?.message;
+      const errMsg =
+        status === 409
+          ? backendMessage || "This email is already registered with a different account type."
+          : error?.message || backendMessage || "Google sign-in failed";
+      toast({
+        title: status === 409 ? "Account type mismatch" : "Authentication failed",
+        description: errMsg,
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
